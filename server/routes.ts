@@ -199,7 +199,7 @@ export async function registerRoutes(
       const allProducts = await storage.getAllProducts();
       const matches = allProducts.filter(p => 
         p.name.toLowerCase().includes(query) ||
-        p.manufacturer?.toLowerCase().includes(query) ||
+        p.brand?.toLowerCase().includes(query) ||
         p.style?.toLowerCase().includes(query) ||
         p.upc?.includes(query)
       ).slice(0, 20); // Limit to 20 results
@@ -218,7 +218,7 @@ export async function registerRoutes(
         return res.status(401).json({ error: "Not authenticated" });
       }
       
-      const { name, upc, distributorId, manufacturer, beverageType, style, notes, abv, ibu, isLocal, skipDuplicateCheck } = req.body;
+      const { name, upc, distributorId, brand, beverageType, style, notes, abv, ibu, isLocal, skipDuplicateCheck } = req.body;
       
       if (!name || name.trim() === "") {
         return res.status(400).json({ error: "Product name is required" });
@@ -249,8 +249,8 @@ export async function registerRoutes(
           if (existingName === normalizedName) return true;
           // Contains match (either direction)
           if (existingName.includes(normalizedName) || normalizedName.includes(existingName)) return true;
-          // Same manufacturer and similar name
-          if (manufacturer && p.manufacturer?.toLowerCase() === manufacturer.toLowerCase()) {
+          // Same brand and similar name
+          if (brand && p.brand?.toLowerCase() === brand.toLowerCase()) {
             const words1 = normalizedName.split(/\s+/);
             const words2 = existingName.split(/\s+/);
             const commonWords = words1.filter((w: string) => words2.includes(w));
@@ -273,7 +273,7 @@ export async function registerRoutes(
         name: name.trim(),
         upc: upc || null,
         distributorId: distributorId || null,
-        manufacturer: manufacturer || null,
+        brand: brand || null,
         beverageType: beverageType || "beer",
         style: style || null,
         notes: notes || null,
@@ -1237,7 +1237,7 @@ export async function registerRoutes(
               labelImageUrl: item.label_image_hd || item.label_image || undefined,
               untappdRating: item.rating ?? undefined,
               untappdRatingCount: item.rating_count ?? undefined,
-              manufacturer: item.brewery ?? undefined,
+              brand: item.brewery ?? undefined,
             });
             updated++;
           } else {
@@ -1254,7 +1254,7 @@ export async function registerRoutes(
               isSoldByVolume: true, // Draft beers are sold by volume
               untappdRating: item.rating ?? undefined,
               untappdRatingCount: item.rating_count ?? undefined,
-              manufacturer: item.brewery ?? undefined,
+              brand: item.brewery ?? undefined,
               beverageType: "beer",
             });
             

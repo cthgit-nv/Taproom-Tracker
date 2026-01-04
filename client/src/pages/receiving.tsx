@@ -108,7 +108,7 @@ export default function ReceivingPage() {
   const [newProductRating, setNewProductRating] = useState<number | null>(null);
   
   // Manufacturer and beverage type from Barcode Spider
-  const [newProductManufacturer, setNewProductManufacturer] = useState("");
+  const [newProductBrand, setNewProductBrand] = useState("");
   const [newProductBeverageType, setNewProductBeverageType] = useState<string>("beer");
 
   useEffect(() => {
@@ -175,7 +175,7 @@ export default function ReceivingPage() {
       untappdId?: number | null;
       untappdRating?: number | null;
       isSoldByVolume?: boolean;
-      manufacturer?: string;
+      brand?: string;
       beverageType?: string;
       skipDuplicateCheck?: boolean;
     }) => {
@@ -221,8 +221,8 @@ export default function ReceivingPage() {
     setNewProductRating(beer.rating);
     setIsKeg(true); // Beer from Untappd is typically a keg
     setShowUntappdSearch(false);
-    // Set manufacturer from brewery and beverageType to beer
-    setNewProductManufacturer(beer.breweryName || "");
+    // Set brand from brewery and beverageType to beer
+    setNewProductBrand(beer.breweryName || "");
     setNewProductBeverageType("beer");
     
     toast({
@@ -258,9 +258,9 @@ export default function ReceivingPage() {
               // Pre-fill form with Barcode Spider data
               setNewProductName(barcodeData.title);
               
-              // Map brand to manufacturer
+              // Map brand from Barcode Spider
               if (barcodeData.brand) {
-                setNewProductManufacturer(barcodeData.brand);
+                setNewProductBrand(barcodeData.brand);
               }
               
               // Map category to beverageType
@@ -347,7 +347,7 @@ export default function ReceivingPage() {
       untappdId: newProductUntappdId,
       untappdRating: newProductRating,
       isSoldByVolume: isKeg,
-      manufacturer: newProductManufacturer || undefined,
+      brand: newProductBrand || undefined,
       beverageType: newProductBeverageType,
       skipDuplicateCheck: true, // Skip since we're creating from barcode lookup
     });
@@ -373,7 +373,7 @@ export default function ReceivingPage() {
     setUntappdResults([]);
     setUntappdSearchQuery("");
     // Reset Barcode Spider fields
-    setNewProductManufacturer("");
+    setNewProductBrand("");
     setNewProductBeverageType("beer");
   };
 

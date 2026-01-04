@@ -46,7 +46,7 @@ export default function KegsPage() {
   const [, setLocation] = useLocation();
 
   const [showFilters, setShowFilters] = useState(false);
-  const [filterManufacturer, setFilterManufacturer] = useState<string>("all");
+  const [filterBrand, setFilterBrand] = useState<string>("all");
   const [filterType, setFilterType] = useState<string>("all");
   const [filterStyle, setFilterStyle] = useState<string>("all");
   const [searchTerm, setSearchTerm] = useState("");
@@ -80,7 +80,7 @@ export default function KegsPage() {
     return Math.round((keg.remainingVolOz / keg.initialVolOz) * 100);
   };
 
-  const manufacturers = Array.from(new Set(products.map(p => p.manufacturer).filter((x): x is string => Boolean(x))));
+  const brands = Array.from(new Set(products.map(p => p.brand).filter((x): x is string => Boolean(x))));
   const styles = Array.from(new Set(products.map(p => p.style).filter((x): x is string => Boolean(x))));
 
   const filterKeg = (keg: Keg) => {
@@ -90,7 +90,7 @@ export default function KegsPage() {
     if (searchTerm && !product.name.toLowerCase().includes(searchTerm.toLowerCase())) {
       return false;
     }
-    if (filterManufacturer !== "all" && product.manufacturer !== filterManufacturer) {
+    if (filterBrand !== "all" && product.brand !== filterBrand) {
       return false;
     }
     if (filterType !== "all" && product.beverageType !== filterType) {
@@ -105,7 +105,7 @@ export default function KegsPage() {
   const filteredTappedKegs = kegs.filter(k => k.status === "tapped").filter(filterKeg);
   const filteredOnDeckKegs = kegs.filter(k => k.status === "on_deck").filter(filterKeg);
 
-  const activeFiltersCount = [filterManufacturer, filterType, filterStyle]
+  const activeFiltersCount = [filterBrand, filterType, filterStyle]
     .filter(f => f !== "all").length + (searchTerm ? 1 : 0);
 
   return (
@@ -183,15 +183,15 @@ export default function KegsPage() {
               </div>
 
               <div className="space-y-1">
-                <Label className="text-white/60 text-xs">Manufacturer</Label>
-                <Select value={filterManufacturer} onValueChange={setFilterManufacturer}>
-                  <SelectTrigger className="bg-[#051a11] border-[#1A4D2E] text-white" data-testid="select-manufacturer">
+                <Label className="text-white/60 text-xs">Brand</Label>
+                <Select value={filterBrand} onValueChange={setFilterBrand}>
+                  <SelectTrigger className="bg-[#051a11] border-[#1A4D2E] text-white" data-testid="select-brand">
                     <SelectValue placeholder="All" />
                   </SelectTrigger>
                   <SelectContent className="bg-[#0a2419] border-[#1A4D2E]">
                     <SelectItem value="all" className="text-white">All</SelectItem>
-                    {manufacturers.map(mfr => (
-                      <SelectItem key={mfr} value={mfr} className="text-white">{mfr}</SelectItem>
+                    {brands.map(brand => (
+                      <SelectItem key={brand} value={brand} className="text-white">{brand}</SelectItem>
                     ))}
                   </SelectContent>
                 </Select>
@@ -203,7 +203,7 @@ export default function KegsPage() {
                 variant="ghost"
                 size="sm"
                 onClick={() => {
-                  setFilterManufacturer("all");
+                  setFilterBrand("all");
                   setFilterType("all");
                   setFilterStyle("all");
                   setSearchTerm("");

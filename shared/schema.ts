@@ -79,7 +79,7 @@ export const products = pgTable("products", {
   backupCount: integer("backup_count").default(0),
   untappdRating: real("untappd_rating"),
   untappdRatingCount: integer("untappd_rating_count"),
-  manufacturer: text("manufacturer"),
+  brand: text("brand"),
   beverageType: text("beverage_type", { enum: beverageTypeEnum }).default("beer"),
   notes: text("notes"),
 });
@@ -291,7 +291,7 @@ export const updateProductSchema = z.object({
   distributorId: z.number().nullable().optional(),
   isLocal: z.boolean().optional(),
   notes: z.string().nullable().optional(),
-  manufacturer: z.string().nullable().optional(),
+  brand: z.string().nullable().optional(),
   beverageType: z.enum(beverageTypeEnum).optional(),
   style: z.string().nullable().optional(),
   costPerUnit: z.string().nullable().optional(),

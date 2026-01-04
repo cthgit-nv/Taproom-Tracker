@@ -55,7 +55,7 @@ export default function ProductsPage() {
   const { toast } = useToast();
 
   const [showFilters, setShowFilters] = useState(false);
-  const [filterManufacturer, setFilterManufacturer] = useState<string>("all");
+  const [filterBrand, setFilterBrand] = useState<string>("all");
   const [filterType, setFilterType] = useState<string>("all");
   const [filterStyle, setFilterStyle] = useState<string>("all");
   const [filterDistributor, setFilterDistributor] = useState<string>("all");
@@ -98,7 +98,7 @@ export default function ProductsPage() {
     return null;
   }
 
-  const manufacturers = Array.from(new Set(products.map(p => p.manufacturer).filter((x): x is string => Boolean(x))));
+  const brands = Array.from(new Set(products.map(p => p.brand).filter((x): x is string => Boolean(x))));
   const styles = Array.from(new Set(products.map(p => p.style).filter((x): x is string => Boolean(x))));
   const types = Array.from(new Set(products.map(p => p.beverageType).filter(Boolean))) as string[];
 
@@ -120,7 +120,7 @@ export default function ProductsPage() {
     if (searchTerm && !product.name.toLowerCase().includes(searchTerm.toLowerCase())) {
       return false;
     }
-    if (filterManufacturer !== "all" && product.manufacturer !== filterManufacturer) {
+    if (filterBrand !== "all" && product.brand !== filterBrand) {
       return false;
     }
     // Only apply type filter if category is "all"
@@ -136,7 +136,7 @@ export default function ProductsPage() {
     return true;
   });
 
-  const activeFiltersCount = [filterManufacturer, filterType, filterStyle, filterDistributor]
+  const activeFiltersCount = [filterBrand, filterType, filterStyle, filterDistributor]
     .filter(f => f !== "all").length;
 
   return (
@@ -250,15 +250,15 @@ export default function ProductsPage() {
               </div>
 
               <div className="space-y-1">
-                <Label className="text-white/60 text-xs">Manufacturer</Label>
-                <Select value={filterManufacturer} onValueChange={setFilterManufacturer}>
-                  <SelectTrigger className="bg-[#051a11] border-[#1A4D2E] text-white" data-testid="select-manufacturer">
-                    <SelectValue placeholder="All Manufacturers" />
+                <Label className="text-white/60 text-xs">Brand</Label>
+                <Select value={filterBrand} onValueChange={setFilterBrand}>
+                  <SelectTrigger className="bg-[#051a11] border-[#1A4D2E] text-white" data-testid="select-brand">
+                    <SelectValue placeholder="All Brands" />
                   </SelectTrigger>
                   <SelectContent className="bg-[#0a2419] border-[#1A4D2E]">
-                    <SelectItem value="all" className="text-white">All Manufacturers</SelectItem>
-                    {manufacturers.map(mfr => (
-                      <SelectItem key={mfr} value={mfr} className="text-white">{mfr}</SelectItem>
+                    <SelectItem value="all" className="text-white">All Brands</SelectItem>
+                    {brands.map(brand => (
+                      <SelectItem key={brand} value={brand} className="text-white">{brand}</SelectItem>
                     ))}
                   </SelectContent>
                 </Select>
@@ -285,7 +285,7 @@ export default function ProductsPage() {
                 variant="ghost"
                 size="sm"
                 onClick={() => {
-                  setFilterManufacturer("all");
+                  setFilterBrand("all");
                   setFilterType("all");
                   setFilterStyle("all");
                   setFilterDistributor("all");
@@ -352,7 +352,7 @@ function ProductCard({ product, distributors, isExpanded, onToggle, onUpdate, is
     distributorId: product.distributorId,
     isLocal: product.isLocal ?? false,
     notes: product.notes ?? "",
-    manufacturer: product.manufacturer ?? "",
+    brand: product.brand ?? "",
     beverageType: product.beverageType ?? "beer",
     style: product.style ?? "",
   });
@@ -361,7 +361,7 @@ function ProductCard({ product, distributors, isExpanded, onToggle, onUpdate, is
     editState.distributorId !== product.distributorId ||
     editState.isLocal !== (product.isLocal ?? false) ||
     editState.notes !== (product.notes ?? "") ||
-    editState.manufacturer !== (product.manufacturer ?? "") ||
+    editState.brand !== (product.brand ?? "") ||
     editState.beverageType !== (product.beverageType ?? "beer") ||
     editState.style !== (product.style ?? "");
 
@@ -370,7 +370,7 @@ function ProductCard({ product, distributors, isExpanded, onToggle, onUpdate, is
       distributorId: editState.distributorId,
       isLocal: editState.isLocal,
       notes: editState.notes || null,
-      manufacturer: editState.manufacturer || null,
+      brand: editState.brand || null,
       beverageType: editState.beverageType as BeverageType,
       style: editState.style || null,
     });
@@ -472,13 +472,13 @@ function ProductCard({ product, distributors, isExpanded, onToggle, onUpdate, is
               </div>
 
               <div className="space-y-1">
-                <Label className="text-white/60 text-xs">Manufacturer</Label>
+                <Label className="text-white/60 text-xs">Brand</Label>
                 <Input
-                  value={editState.manufacturer}
-                  onChange={(e) => setEditState({ ...editState, manufacturer: e.target.value })}
+                  value={editState.brand}
+                  onChange={(e) => setEditState({ ...editState, brand: e.target.value })}
                   placeholder="e.g., Sierra Nevada"
                   className="bg-[#051a11] border-[#1A4D2E] text-white"
-                  data-testid="edit-manufacturer"
+                  data-testid="edit-brand"
                 />
               </div>
 
@@ -560,7 +560,7 @@ function ProductCard({ product, distributors, isExpanded, onToggle, onUpdate, is
                     distributorId: product.distributorId,
                     isLocal: product.isLocal ?? false,
                     notes: product.notes ?? "",
-                    manufacturer: product.manufacturer ?? "",
+                    brand: product.brand ?? "",
                     beverageType: product.beverageType ?? "beer",
                     style: product.style ?? "",
                   })}
