@@ -29,7 +29,10 @@ import {
   WifiOff,
   Wifi,
   Settings,
-  Zap
+  Zap,
+  Beer,
+  Package,
+  Loader2
 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import type { Zone, Product, InventorySession } from "@shared/schema";
@@ -53,6 +56,8 @@ interface OfflineCount {
   totalUnits: number;
   isManualEstimate: boolean;
   timestamp: number;
+  bottleSizeMl: number;
+  isKeg: boolean;
 }
 
 export default function InventorySessionPage() {
@@ -87,6 +92,17 @@ export default function InventorySessionPage() {
   
   const [fullBottles, setFullBottles] = useState(0);
   const [partialPercent, setPartialPercent] = useState([0]);
+  const [backupCount, setBackupCount] = useState(0);
+  const [coolerStock, setCoolerStock] = useState(0);
+  const [kegSummary, setKegSummary] = useState<{
+    tapped: Array<{
+      kegId: number;
+      tapNumber: number | null;
+      remainingPercent: number;
+    }>;
+    onDeckCount: number;
+    totalKegEquivalent: number;
+  } | null>(null);
   
   // View completed session state
   const [viewSessionId, setViewSessionId] = useState<number | null>(null);
@@ -104,8 +120,22 @@ export default function InventorySessionPage() {
   // Auto-start zone from URL param
   const [autoStartZone, setAutoStartZone] = useState<number | null>(null);
 
-  // Calculate total units
-  const totalUnits = fullBottles + (partialPercent[0] / 100);
+  // Calculate total units - differs for bottles vs kegs
+  const getTotalUnits = () => {
+    if (currentProduct?.isSoldByVolume) {
+      // Kegs: sum of tapped remaining + cooler stock
+      if (kegSummary === null) {
+        // Still loading - return 0 to prevent incorrect bottle math
+        return 0;
+      }
+      const tappedTotal = kegSummary.tapped.reduce((sum, k) => sum + k.remainingPercent, 0);
+      return tappedTotal + coolerStock;
+    } else {
+      // Bottles: partial open + backup sealed count
+      return (partialPercent[0] / 100) + backupCount;
+    }
+  };
+  const totalUnits = getTotalUnits();
 
   // Online/offline detection
   useEffect(() => {
@@ -215,16 +245,22 @@ export default function InventorySessionPage() {
     
     for (const count of offlineCounts) {
       try {
-        const partialOz = count.partialPercent > 0 
-          ? (count.partialPercent / 100) * (displayProducts.find(p => p.id === count.productId)?.bottleSizeMl || 750) / 29.574 
+        // Use cached bottle size from the offline count for accurate conversion
+        const bottleSizeMl = count.bottleSizeMl || 750;
+        const isKeg = count.isKeg || false;
+        
+        // Send partial value in milliliters (consistent with live saves)
+        const partialMl = !isKeg && count.partialPercent > 0 
+          ? (count.partialPercent / 100) * bottleSizeMl
           : null;
         
         await apiRequest("POST", "/api/inventory/counts", {
           sessionId: activeSession.id,
           productId: count.productId,
           countedBottles: count.countedBottles,
-          countedPartialOz: partialOz,
+          countedPartialOz: partialMl, // Note: field name is legacy, value is actually in ml
           isManualEstimate: count.isManualEstimate,
+          isKeg: isKeg,
         });
       } catch (e) {
         console.error("Failed to sync count:", e);
@@ -234,12 +270,13 @@ export default function InventorySessionPage() {
     setOfflineCounts([]);
     localStorage.removeItem("wellstocked_offline_counts");
     queryClient.invalidateQueries({ queryKey: ["/api/products"] });
+    queryClient.invalidateQueries({ queryKey: ["/api/kegs"] });
     
     toast({
       title: "Sync Complete",
       description: `${offlineCounts.length} counts synced`,
     });
-  }, [offlineCounts, activeSession, displayProducts]);
+  }, [offlineCounts, activeSession]);
 
   const startSessionMutation = useMutation({
     mutationFn: async (zoneId: number) => {
@@ -287,12 +324,14 @@ export default function InventorySessionPage() {
       countedPartialOz: number | null;
       isManualEstimate: boolean;
       scaleWeightGrams: number | null;
+      isKeg: boolean;
     }) => {
       const res = await apiRequest("POST", "/api/inventory/counts", data);
       return res.json();
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/products"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/kegs"] });
     },
   });
 
@@ -342,7 +381,7 @@ export default function InventorySessionPage() {
     }
   };
 
-  const handleSelectProduct = (product: Product) => {
+  const handleSelectProduct = async (product: Product) => {
     setCurrentProduct(product);
     setFullBottles(0);
     setPartialPercent([0]);
@@ -350,10 +389,30 @@ export default function InventorySessionPage() {
     setIsManualEstimate(true);
     setEditEmptyWeight(product.emptyWeightGrams?.toString() || "");
     setEditFullWeight(product.fullWeightGrams?.toString() || "");
+    
+    // Initialize backup count from product data
+    setBackupCount(product.backupKegCount || 0);
+    
+    // For kegs, fetch the keg summary
+    if (product.isSoldByVolume) {
+      setKegSummary(null);
+      try {
+        const res = await fetch(`/api/kegs/product/${product.id}/summary`, { credentials: "include" });
+        const summary = await res.json();
+        setKegSummary(summary);
+        setCoolerStock(summary.onDeckCount || 0);
+      } catch (error) {
+        console.error("Failed to fetch keg summary:", error);
+      }
+    } else {
+      setKegSummary(null);
+      setCoolerStock(0);
+    }
+    
     setMode("input");
     
-    // Auto-weigh if scale connected
-    if (scaleConnected) {
+    // Auto-weigh if scale connected (only for bottles)
+    if (scaleConnected && !product.isSoldByVolume) {
       setTimeout(() => simulateScaleReading(product), 500);
     }
   };
@@ -361,13 +420,31 @@ export default function InventorySessionPage() {
   const handleSaveCount = () => {
     if (!currentProduct) return;
     
-    const partialOz = partialPercent[0] > 0 
-      ? (partialPercent[0] / 100) * (currentProduct.bottleSizeMl || 750) / 29.574 
+    const isKeg = !!currentProduct.isSoldByVolume;
+    
+    // For kegs, prevent saving until keg summary is loaded
+    if (isKeg && kegSummary === null) {
+      toast({
+        title: "Loading",
+        description: "Please wait for keg data to load",
+        variant: "destructive",
+      });
+      return;
+    }
+    
+    // For bottles: partial is in oz (converted from percentage)
+    // For kegs: no partial oz (kegs use remaining % from PMB)
+    const partialOz = !isKeg && partialPercent[0] > 0 
+      ? (partialPercent[0] / 100) * (currentProduct.bottleSizeMl || 750)
       : null;
+    
+    // For bottles: countedBottles = backupCount (sealed units)
+    // For kegs: countedBottles = coolerStock (on_deck kegs in cooler)
+    const countedUnits = isKeg ? coolerStock : backupCount;
     
     const countData: CountData = {
       productId: currentProduct.id,
-      countedBottles: fullBottles,
+      countedBottles: countedUnits,
       countedPartialOz: partialOz,
       totalUnits: totalUnits,
       isManualEstimate: isManualEstimate,
@@ -380,11 +457,13 @@ export default function InventorySessionPage() {
       const offlineCount: OfflineCount = {
         productId: currentProduct.id,
         productName: currentProduct.name,
-        countedBottles: fullBottles,
+        countedBottles: countedUnits,
         partialPercent: partialPercent[0],
         totalUnits: totalUnits,
         isManualEstimate: isManualEstimate,
         timestamp: Date.now(),
+        bottleSizeMl: currentProduct.bottleSizeMl || 750,
+        isKeg: isKeg,
       };
       const newOfflineCounts = [...offlineCounts, offlineCount];
       setOfflineCounts(newOfflineCounts);
@@ -398,10 +477,11 @@ export default function InventorySessionPage() {
       saveCountMutation.mutate({
         sessionId: activeSession.id,
         productId: currentProduct.id,
-        countedBottles: fullBottles,
+        countedBottles: countedUnits,
         countedPartialOz: partialOz,
         isManualEstimate: isManualEstimate,
         scaleWeightGrams: scaleWeight,
+        isKeg: isKeg,
       });
     }
     
@@ -861,120 +941,235 @@ export default function InventorySessionPage() {
                   />
                 ) : (
                   <div className="w-14 h-14 rounded-lg bg-[#1A4D2E] flex items-center justify-center">
-                    <span className="text-[#D4AF37] text-xl font-bold">
-                      {currentProduct.name.charAt(0)}
-                    </span>
+                    {currentProduct.isSoldByVolume ? (
+                      <Beer className="w-7 h-7 text-[#D4AF37]" />
+                    ) : (
+                      <span className="text-[#D4AF37] text-xl font-bold">
+                        {currentProduct.name.charAt(0)}
+                      </span>
+                    )}
                   </div>
                 )}
                 <div className="flex-1">
-                  <p className="font-semibold text-white">{currentProduct.name}</p>
+                  <div className="flex items-center gap-2">
+                    <p className="font-semibold text-white">{currentProduct.name}</p>
+                    <Badge variant="outline" className={`text-xs ${currentProduct.isSoldByVolume ? "border-blue-400 text-blue-400" : "border-green-400 text-green-400"}`}>
+                      {currentProduct.isSoldByVolume ? "Keg" : "Bottle"}
+                    </Badge>
+                  </div>
                   <p className="text-sm text-white/60">
-                    {currentProduct.bottleSizeMl}ml - {currentProduct.style}
+                    {currentProduct.isSoldByVolume ? "Draft Beer" : `${currentProduct.bottleSizeMl}ml`}
+                    {currentProduct.style ? ` - ${currentProduct.style}` : ""}
                   </p>
                 </div>
-                <Button
-                  variant="ghost"
-                  size="icon"
-                  onClick={() => setShowWeightEditor(true)}
-                  className="text-white/40"
-                  data-testid="button-edit-weights"
-                >
-                  <Settings className="w-5 h-5" />
-                </Button>
+                {!currentProduct.isSoldByVolume && (
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    onClick={() => setShowWeightEditor(true)}
+                    className="text-white/40"
+                    data-testid="button-edit-weights"
+                  >
+                    <Settings className="w-5 h-5" />
+                  </Button>
+                )}
               </CardContent>
             </Card>
 
-            {/* Partial Bottle with Scale */}
-            <Card className="bg-[#0a2419] border-2 border-[#1A4D2E]">
-              <CardContent className="p-4">
-                <div className="flex items-center justify-between mb-4">
-                  <div className="flex items-center gap-2">
-                    <Scale className="w-5 h-5 text-[#D4AF37]" />
-                    <span className="text-white font-medium">Open/Partial Bottle</span>
-                  </div>
-                  <div className="flex items-center gap-2">
-                    {!isManualEstimate && scaleWeight && (
-                      <Badge variant="outline" className="border-blue-400 text-blue-400">
-                        {scaleWeight}g (Scale)
-                      </Badge>
-                    )}
-                    {isManualEstimate && partialPercent[0] > 0 && (
-                      <Badge variant="outline" className="border-orange-400 text-orange-400">
-                        Manual
-                      </Badge>
-                    )}
-                    {scaleConnected && (
+            {/* BOTTLE INTERFACE */}
+            {!currentProduct.isSoldByVolume && (
+              <>
+                {/* Partial Bottle with Scale */}
+                <Card className="bg-[#0a2419] border-2 border-[#1A4D2E]">
+                  <CardContent className="p-4">
+                    <div className="flex items-center justify-between mb-4">
+                      <div className="flex items-center gap-2">
+                        <Scale className="w-5 h-5 text-[#D4AF37]" />
+                        <span className="text-white font-medium">Open/Partial Bottle</span>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        {!isManualEstimate && scaleWeight && (
+                          <Badge variant="outline" className="border-blue-400 text-blue-400">
+                            {scaleWeight}g
+                          </Badge>
+                        )}
+                        {isManualEstimate && partialPercent[0] > 0 && (
+                          <Badge variant="outline" className="border-orange-400 text-orange-400">
+                            Manual
+                          </Badge>
+                        )}
+                        {scaleConnected && (
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={() => simulateScaleReading()}
+                            className="border-blue-400 text-blue-400"
+                            data-testid="button-weigh"
+                          >
+                            <BluetoothConnected className="w-4 h-4 mr-1" />
+                            Weigh
+                          </Button>
+                        )}
+                      </div>
+                    </div>
+                    
+                    <div className="space-y-4">
+                      <div>
+                        <div className="flex justify-between text-sm text-white/60 mb-2">
+                          <span>Empty</span>
+                          <span className={`font-medium ${isManualEstimate ? "text-orange-400" : "text-blue-400"}`}>
+                            {partialPercent[0]}%
+                          </span>
+                          <span>Full</span>
+                        </div>
+                        <Slider
+                          value={partialPercent}
+                          onValueChange={handleManualSliderChange}
+                          max={100}
+                          step={5}
+                          className="w-full"
+                          data-testid="slider-partial"
+                        />
+                        <p className="text-center text-sm text-white/40 mt-2">
+                          = {(partialPercent[0] / 100).toFixed(2)} units
+                        </p>
+                      </div>
+                    </div>
+                  </CardContent>
+                </Card>
+
+                {/* Sealed Bottles Stepper (Backup Count) */}
+                <Card className="bg-[#0a2419] border-2 border-[#1A4D2E]">
+                  <CardContent className="p-4">
+                    <div className="flex items-center gap-2 mb-4">
+                      <Package className="w-5 h-5 text-[#D4AF37]" />
+                      <span className="text-white font-medium">Sealed Backup</span>
+                    </div>
+                    <div className="flex items-center justify-center gap-6">
                       <Button
                         variant="outline"
-                        size="sm"
-                        onClick={() => simulateScaleReading()}
-                        className="border-blue-400 text-blue-400"
-                        data-testid="button-weigh"
+                        size="icon"
+                        onClick={() => setBackupCount(Math.max(0, backupCount - 1))}
+                        className="w-14 h-14 border-[#1A4D2E] text-white"
+                        data-testid="button-backup-minus"
                       >
-                        <BluetoothConnected className="w-4 h-4 mr-1" />
-                        Weigh
+                        <Minus className="w-6 h-6" />
                       </Button>
-                    )}
-                  </div>
-                </div>
-                
-                <div className="space-y-4">
-                  <div>
-                    <div className="flex justify-between text-sm text-white/60 mb-2">
-                      <span>Empty</span>
-                      <span className={`font-medium ${isManualEstimate ? "text-orange-400" : "text-blue-400"}`}>
-                        {partialPercent[0]}%
+                      <span 
+                        className="text-4xl font-bold text-[#D4AF37] w-20 text-center"
+                        data-testid="text-backup-count"
+                      >
+                        {backupCount}
                       </span>
-                      <span>Full</span>
+                      <Button
+                        variant="outline"
+                        size="icon"
+                        onClick={() => setBackupCount(backupCount + 1)}
+                        className="w-14 h-14 border-[#1A4D2E] text-white"
+                        data-testid="button-backup-plus"
+                      >
+                        <Plus className="w-6 h-6" />
+                      </Button>
                     </div>
-                    <Slider
-                      value={partialPercent}
-                      onValueChange={handleManualSliderChange}
-                      max={100}
-                      step={5}
-                      className="w-full"
-                      data-testid="slider-partial"
-                    />
-                    <p className="text-center text-sm text-white/40 mt-2">
-                      = {(partialPercent[0] / 100).toFixed(2)} units
-                    </p>
-                  </div>
-                </div>
-              </CardContent>
-            </Card>
+                  </CardContent>
+                </Card>
+              </>
+            )}
 
-            {/* Full Bottles Stepper */}
-            <Card className="bg-[#0a2419] border-2 border-[#1A4D2E]">
-              <CardContent className="p-4">
-                <p className="text-white font-medium mb-4">Full Sealed Bottles/Cans</p>
-                <div className="flex items-center justify-center gap-6">
-                  <Button
-                    variant="outline"
-                    size="icon"
-                    onClick={() => setFullBottles(Math.max(0, fullBottles - 1))}
-                    className="w-14 h-14 border-[#1A4D2E] text-white"
-                    data-testid="button-minus"
-                  >
-                    <Minus className="w-6 h-6" />
-                  </Button>
-                  <span 
-                    className="text-4xl font-bold text-[#D4AF37] w-20 text-center"
-                    data-testid="text-full-bottles"
-                  >
-                    {fullBottles}
-                  </span>
-                  <Button
-                    variant="outline"
-                    size="icon"
-                    onClick={() => setFullBottles(fullBottles + 1)}
-                    className="w-14 h-14 border-[#1A4D2E] text-white"
-                    data-testid="button-plus"
-                  >
-                    <Plus className="w-6 h-6" />
-                  </Button>
-                </div>
-              </CardContent>
-            </Card>
+            {/* KEG INTERFACE */}
+            {currentProduct.isSoldByVolume && (
+              <>
+                {/* Tapped Kegs Display (Read-Only) */}
+                <Card className="bg-[#0a2419] border-2 border-[#1A4D2E]">
+                  <CardContent className="p-4">
+                    <div className="flex items-center gap-2 mb-4">
+                      <Beer className="w-5 h-5 text-[#D4AF37]" />
+                      <span className="text-white font-medium">On Tap</span>
+                      <Badge variant="outline" className="border-white/40 text-white/40 text-xs ml-auto">
+                        Read Only (from PMB)
+                      </Badge>
+                    </div>
+                    
+                    {kegSummary === null ? (
+                      <div className="flex items-center justify-center py-4">
+                        <Loader2 className="w-6 h-6 text-[#D4AF37] animate-spin" />
+                      </div>
+                    ) : kegSummary.tapped.length === 0 ? (
+                      <p className="text-white/40 text-center py-4">No kegs currently tapped</p>
+                    ) : (
+                      <div className="space-y-2">
+                        {kegSummary.tapped.map((keg) => (
+                          <div 
+                            key={keg.kegId}
+                            className="flex items-center justify-between bg-[#051a11] p-3 rounded-lg"
+                          >
+                            <div className="flex items-center gap-3">
+                              <Badge className="bg-[#1A4D2E] text-[#D4AF37] border-none">
+                                Tap {keg.tapNumber || "?"}
+                              </Badge>
+                            </div>
+                            <div className="flex items-center gap-2">
+                              <div className="w-24 h-2 bg-[#1A4D2E] rounded-full overflow-hidden">
+                                <div 
+                                  className="h-full bg-[#D4AF37] rounded-full"
+                                  style={{ width: `${(keg.remainingPercent * 100)}%` }}
+                                />
+                              </div>
+                              <span className="text-white/60 text-sm w-12 text-right">
+                                {(keg.remainingPercent * 100).toFixed(0)}%
+                              </span>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                    
+                    {kegSummary && kegSummary.tapped.length > 0 && (
+                      <p className="text-center text-sm text-white/40 mt-3">
+                        = {kegSummary.tapped.reduce((sum, k) => sum + k.remainingPercent, 0).toFixed(2)} kegs on tap
+                      </p>
+                    )}
+                  </CardContent>
+                </Card>
+
+                {/* Cooler Stock Stepper */}
+                <Card className="bg-[#0a2419] border-2 border-[#1A4D2E]">
+                  <CardContent className="p-4">
+                    <div className="flex items-center gap-2 mb-4">
+                      <Package className="w-5 h-5 text-[#D4AF37]" />
+                      <span className="text-white font-medium">Cooler Stock</span>
+                      <span className="text-white/40 text-sm ml-auto">Full kegs in cooler</span>
+                    </div>
+                    <div className="flex items-center justify-center gap-6">
+                      <Button
+                        variant="outline"
+                        size="icon"
+                        onClick={() => setCoolerStock(Math.max(0, coolerStock - 1))}
+                        className="w-14 h-14 border-[#1A4D2E] text-white"
+                        data-testid="button-cooler-minus"
+                      >
+                        <Minus className="w-6 h-6" />
+                      </Button>
+                      <span 
+                        className="text-4xl font-bold text-[#D4AF37] w-20 text-center"
+                        data-testid="text-cooler-count"
+                      >
+                        {coolerStock}
+                      </span>
+                      <Button
+                        variant="outline"
+                        size="icon"
+                        onClick={() => setCoolerStock(coolerStock + 1)}
+                        className="w-14 h-14 border-[#1A4D2E] text-white"
+                        data-testid="button-cooler-plus"
+                      >
+                        <Plus className="w-6 h-6" />
+                      </Button>
+                    </div>
+                  </CardContent>
+                </Card>
+              </>
+            )}
 
             {/* Fixed Bottom: Total + Save Button */}
             <div className="fixed bottom-0 left-0 right-0 bg-[#051a11] border-t border-[#1A4D2E]">
@@ -982,8 +1177,8 @@ export default function InventorySessionPage() {
               <div className="px-4 py-3 border-b border-[#1A4D2E]/50">
                 <div className="flex items-center justify-between">
                   <div className="flex items-center gap-2">
-                    <span className="text-white/60">Total</span>
-                    {!isManualEstimate && (
+                    <span className="text-white/60">Total On Hand</span>
+                    {!currentProduct.isSoldByVolume && !isManualEstimate && (
                       <Badge variant="outline" className="border-blue-400 text-blue-400 text-xs">
                         Scale
                       </Badge>
@@ -994,7 +1189,10 @@ export default function InventorySessionPage() {
                       {totalUnits.toFixed(1)}
                     </span>
                     <span className="text-white/40 text-sm">
-                      ({fullBottles} + {(partialPercent[0] / 100).toFixed(1)})
+                      {currentProduct.isSoldByVolume 
+                        ? `(${kegSummary?.tapped.reduce((s, k) => s + k.remainingPercent, 0).toFixed(1) || 0} tapped + ${coolerStock} cooler)`
+                        : `(${(partialPercent[0] / 100).toFixed(1)} open + ${backupCount} sealed)`
+                      }
                     </span>
                   </div>
                 </div>
@@ -1004,15 +1202,22 @@ export default function InventorySessionPage() {
               <div className="p-4">
                 <Button
                   onClick={handleSaveCount}
-                  disabled={saveCountMutation.isPending}
+                  disabled={saveCountMutation.isPending || (currentProduct.isSoldByVolume && kegSummary === null)}
                   className="w-full h-14 bg-[#1A4D2E] text-[#D4AF37] border-2 border-[#D4AF37] text-lg font-semibold"
                   data-testid="button-save-next"
                 >
                   {saveCountMutation.isPending ? "Saving..." : (
-                    <>
-                      Save & {quickScanMode ? "Scan Next" : "Continue"}
-                      {quickScanMode && <Camera className="w-5 h-5 ml-2" />}
-                    </>
+                    currentProduct.isSoldByVolume && kegSummary === null ? (
+                      <>
+                        <Loader2 className="w-5 h-5 mr-2 animate-spin" />
+                        Loading...
+                      </>
+                    ) : (
+                      <>
+                        Save & {quickScanMode ? "Scan Next" : "Continue"}
+                        {quickScanMode && <Camera className="w-5 h-5 ml-2" />}
+                      </>
+                    )
                   )}
                 </Button>
               </div>

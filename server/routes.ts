@@ -348,7 +348,7 @@ export async function registerRoutes(
   // Add/update a count in a session
   app.post("/api/inventory/counts", async (req: Request, res: Response) => {
     try {
-      const { sessionId, productId, countedBottles, countedPartialOz, expectedCount } = req.body;
+      const { sessionId, productId, countedBottles, countedPartialOz, expectedCount, isKeg } = req.body;
       
       if (!sessionId || !productId) {
         return res.status(400).json({ error: "Session ID and Product ID are required" });
@@ -362,9 +362,23 @@ export async function registerRoutes(
         expectedCount: expectedCount || null,
       });
       
-      // Update product's current count
-      const totalCount = (countedBottles || 0) + (countedPartialOz ? countedPartialOz / 750 : 0);
-      await storage.updateProduct(productId, { currentCountBottles: totalCount });
+      // Get product to determine type
+      const product = await storage.getProduct(productId);
+      
+      if (product?.isSoldByVolume) {
+        // For kegs: countedBottles is the cooler stock (on_deck kegs)
+        // The kegs table is the source of truth - we don't update product counts
+        // Just record the observation in inventory count
+      } else {
+        // For bottles: 
+        // - countedPartialOz represents the partial/open bottle (stored as currentCountBottles as a fraction)
+        // - countedBottles is the sealed backup count (stored as backupKegCount)
+        const partialUnits = countedPartialOz ? countedPartialOz / (product?.bottleSizeMl || 750) : 0;
+        await storage.updateProduct(productId, { 
+          currentCountBottles: partialUnits,
+          backupKegCount: countedBottles || 0,
+        });
+      }
       
       return res.json(count);
     } catch (error) {
