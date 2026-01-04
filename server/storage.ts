@@ -19,12 +19,14 @@ export interface IStorage {
   getUser(id: number): Promise<User | undefined>;
   getUserByPin(pinCode: string): Promise<User | undefined>;
   createUser(user: InsertUser): Promise<User>;
+  updateUser(id: number, user: Partial<InsertUser>): Promise<User | undefined>;
+  deleteUser(id: number): Promise<void>;
   getAllUsers(): Promise<User[]>;
   
   // Settings
   getSettings(): Promise<Settings | undefined>;
   createSettings(settings: InsertSettings): Promise<Settings>;
-  updateSettings(id: number, settings: Partial<InsertSettings>): Promise<Settings | undefined>;
+  updateSettings(settings: Partial<InsertSettings>): Promise<Settings | undefined>;
   
   // Distributors
   getDistributor(id: number): Promise<Distributor | undefined>;
@@ -93,6 +95,15 @@ export class DatabaseStorage implements IStorage {
     return user;
   }
 
+  async updateUser(id: number, updateData: Partial<InsertUser>): Promise<User | undefined> {
+    const [result] = await db.update(users).set(updateData).where(eq(users.id, id)).returning();
+    return result || undefined;
+  }
+
+  async deleteUser(id: number): Promise<void> {
+    await db.delete(users).where(eq(users.id, id));
+  }
+
   async getAllUsers(): Promise<User[]> {
     return db.select().from(users);
   }
@@ -108,8 +119,11 @@ export class DatabaseStorage implements IStorage {
     return result;
   }
 
-  async updateSettings(id: number, updateData: Partial<InsertSettings>): Promise<Settings | undefined> {
-    const [result] = await db.update(settings).set(updateData).where(eq(settings.id, id)).returning();
+  async updateSettings(updateData: Partial<InsertSettings>): Promise<Settings | undefined> {
+    // Get the first settings row and update it
+    const existingSettings = await this.getSettings();
+    if (!existingSettings) return undefined;
+    const [result] = await db.update(settings).set(updateData).where(eq(settings.id, existingSettings.id)).returning();
     return result || undefined;
   }
 

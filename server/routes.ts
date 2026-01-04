@@ -492,6 +492,228 @@ export async function registerRoutes(
     }
   });
 
+  // ========================
+  // GoTab Sales Integration Routes
+  // ========================
+  
+  // Sync daily sales from GoTab (read-only integration)
+  app.post("/api/gotab/sync", async (req: Request, res: Response) => {
+    try {
+      const settings = await storage.getSettings();
+      
+      if (!settings?.gotabLocId || !settings?.gotabKey || !settings?.gotabSecret) {
+        return res.status(400).json({ error: "GoTab not configured" });
+      }
+      
+      // In production, this would call GoTab API
+      // For now, simulate the sync process
+      const products = await storage.getAllProducts();
+      let processed = 0;
+      const errors: string[] = [];
+      
+      // Simulate processing sales data
+      // Draft beers (isSoldByVolume=true): Only record revenue, ignore quantity (PMB sensors handle this)
+      // Bottles/Cans (isSoldByVolume=false): Deduct sold quantity from currentCountBottles
+      
+      for (const product of products) {
+        if (!product.isSoldByVolume) {
+          // For bottles/cans, we would deduct from currentCountBottles
+          // Example: await storage.updateProduct(product.id, { currentCountBottles: newCount });
+          processed++;
+        } else {
+          // For draft beer, we only track revenue (quantity from PMB)
+          processed++;
+        }
+      }
+      
+      return res.json({ processed, errors, message: "GoTab sync completed" });
+    } catch (error) {
+      console.error("GoTab sync error:", error);
+      return res.status(500).json({ error: "Internal server error" });
+    }
+  });
+
+  // Get daily sales from GoTab
+  app.post("/api/gotab/daily-sales", async (req: Request, res: Response) => {
+    try {
+      const { date } = req.body;
+      const settings = await storage.getSettings();
+      
+      if (!settings?.gotabLocId || !settings?.gotabKey || !settings?.gotabSecret) {
+        return res.status(400).json({ error: "GoTab not configured" });
+      }
+      
+      // In production, this would fetch from GoTab API
+      // For now, return simulated data
+      return res.json({
+        date: date || new Date().toISOString().split('T')[0],
+        items: [],
+        totalRevenue: 0,
+      });
+    } catch (error) {
+      console.error("GoTab daily sales error:", error);
+      return res.status(500).json({ error: "Internal server error" });
+    }
+  });
+
+  // ========================
+  // User Management Routes (Owner Only)
+  // ========================
+  
+  // Create new user (owner only)
+  app.post("/api/users", async (req: Request, res: Response) => {
+    try {
+      if (!req.session.userId) {
+        return res.status(401).json({ error: "Not authenticated" });
+      }
+      
+      const currentUser = await storage.getUser(req.session.userId);
+      if (!currentUser || currentUser.role !== "owner") {
+        return res.status(403).json({ error: "Owner access required" });
+      }
+      
+      const { name, pinCode, role } = req.body;
+      
+      if (!name || !pinCode || !role) {
+        return res.status(400).json({ error: "Name, PIN, and role are required" });
+      }
+      
+      if (!["owner", "admin", "staff"].includes(role)) {
+        return res.status(400).json({ error: "Invalid role" });
+      }
+      
+      // Check if PIN already exists
+      const existingUser = await storage.getUserByPin(pinCode);
+      if (existingUser) {
+        return res.status(400).json({ error: "PIN already in use" });
+      }
+      
+      const user = await storage.createUser({ name, pinCode, role });
+      const { pinCode: _, ...safeUser } = user;
+      return res.json(safeUser);
+    } catch (error) {
+      console.error("Create user error:", error);
+      return res.status(500).json({ error: "Internal server error" });
+    }
+  });
+  
+  // Update user (owner only)
+  app.patch("/api/users/:id", async (req: Request, res: Response) => {
+    try {
+      if (!req.session.userId) {
+        return res.status(401).json({ error: "Not authenticated" });
+      }
+      
+      const currentUser = await storage.getUser(req.session.userId);
+      if (!currentUser || currentUser.role !== "owner") {
+        return res.status(403).json({ error: "Owner access required" });
+      }
+      
+      const userId = parseInt(req.params.id);
+      const { name, pinCode, role } = req.body;
+      
+      // If changing PIN, check it's not in use
+      if (pinCode) {
+        const existingUser = await storage.getUserByPin(pinCode);
+        if (existingUser && existingUser.id !== userId) {
+          return res.status(400).json({ error: "PIN already in use" });
+        }
+      }
+      
+      const user = await storage.updateUser(userId, { name, pinCode, role });
+      if (!user) {
+        return res.status(404).json({ error: "User not found" });
+      }
+      
+      const { pinCode: _, ...safeUser } = user;
+      return res.json(safeUser);
+    } catch (error) {
+      console.error("Update user error:", error);
+      return res.status(500).json({ error: "Internal server error" });
+    }
+  });
+  
+  // Delete user (owner only, cannot delete self)
+  app.delete("/api/users/:id", async (req: Request, res: Response) => {
+    try {
+      if (!req.session.userId) {
+        return res.status(401).json({ error: "Not authenticated" });
+      }
+      
+      const currentUser = await storage.getUser(req.session.userId);
+      if (!currentUser || currentUser.role !== "owner") {
+        return res.status(403).json({ error: "Owner access required" });
+      }
+      
+      const userId = parseInt(req.params.id);
+      
+      // Cannot delete self
+      if (userId === req.session.userId) {
+        return res.status(400).json({ error: "Cannot delete yourself" });
+      }
+      
+      // Cannot delete other owners (safety)
+      const targetUser = await storage.getUser(userId);
+      if (targetUser?.role === "owner") {
+        return res.status(400).json({ error: "Cannot delete owner accounts" });
+      }
+      
+      await storage.deleteUser(userId);
+      return res.json({ success: true });
+    } catch (error) {
+      console.error("Delete user error:", error);
+      return res.status(500).json({ error: "Internal server error" });
+    }
+  });
+
+  // ========================
+  // Settings Routes (Owner Only for API Keys)
+  // ========================
+  
+  // Update settings
+  app.patch("/api/settings", async (req: Request, res: Response) => {
+    try {
+      if (!req.session.userId) {
+        return res.status(401).json({ error: "Not authenticated" });
+      }
+      
+      const currentUser = await storage.getUser(req.session.userId);
+      if (!currentUser) {
+        return res.status(401).json({ error: "User not found" });
+      }
+      
+      const { 
+        gotabLocId, gotabKey, gotabSecret, 
+        untappdReadToken, untappdWriteToken, untappdMenuId,
+        simulationMode, ...otherFields 
+      } = req.body;
+      
+      // API key fields require owner access
+      const apiKeyFields = { gotabLocId, gotabKey, gotabSecret, untappdReadToken, untappdWriteToken, untappdMenuId };
+      const hasApiKeyChanges = Object.values(apiKeyFields).some(v => v !== undefined);
+      
+      if (hasApiKeyChanges && currentUser.role !== "owner") {
+        return res.status(403).json({ error: "Owner access required for API keys" });
+      }
+      
+      // Simulation mode can be changed by admin or owner
+      if (simulationMode !== undefined && !["owner", "admin"].includes(currentUser.role)) {
+        return res.status(403).json({ error: "Admin access required for simulation mode" });
+      }
+      
+      const settings = await storage.updateSettings({
+        ...otherFields,
+        ...(hasApiKeyChanges ? apiKeyFields : {}),
+        ...(simulationMode !== undefined ? { simulationMode } : {}),
+      });
+      
+      return res.json(settings);
+    } catch (error) {
+      console.error("Update settings error:", error);
+      return res.status(500).json({ error: "Internal server error" });
+    }
+  });
+
   return httpServer;
 }
 
