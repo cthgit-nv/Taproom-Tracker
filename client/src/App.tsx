@@ -9,6 +9,7 @@ import DashboardPage from "@/pages/dashboard";
 import InventorySessionPage from "@/pages/inventory-session";
 import InventoryDashboardPage from "@/pages/inventory-dashboard";
 import ReceivingPage from "@/pages/receiving";
+import SmartOrderPage from "@/pages/smart-order";
 import NotFound from "@/pages/not-found";
 
 function Router() {
@@ -19,6 +20,7 @@ function Router() {
       <Route path="/inventory" component={InventorySessionPage} />
       <Route path="/inventory-dashboard" component={InventoryDashboardPage} />
       <Route path="/receiving" component={ReceivingPage} />
+      <Route path="/smart-order" component={SmartOrderPage} />
       <Route component={NotFound} />
     </Switch>
   );

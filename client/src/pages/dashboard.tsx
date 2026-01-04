@@ -1,6 +1,7 @@
 import { useAuth } from "@/lib/auth-context";
 import { useLocation, Link } from "wouter";
 import { useEffect } from "react";
+import { useQuery } from "@tanstack/react-query";
 import { 
   Beer, 
   Package, 
@@ -9,24 +10,88 @@ import {
   Home,
   LogOut,
   TrendingDown,
+  TrendingUp,
   AlertCircle,
   CheckCircle,
   ClipboardList,
-  Truck
+  Truck,
+  Star,
+  Sparkles,
+  Dog
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent } from "@/components/ui/card";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
+import type { Product, Keg } from "@shared/schema";
+
+// Stars vs Dogs categorization
+interface CategorizedProduct extends Product {
+  category: "star" | "cash_cow" | "question" | "dog";
+  velocity: number;
+  rating: number;
+}
+
+function categorizeProduct(product: Product): CategorizedProduct {
+  const velocity = product.historicalVelocity || 0;
+  const rating = product.untappdRating || 0;
+  
+  // High velocity threshold: > 2 kegs/week, High rating: > 3.8
+  const highVelocity = velocity > 2;
+  const highRating = rating > 3.8;
+  
+  let category: "star" | "cash_cow" | "question" | "dog";
+  if (highVelocity && highRating) {
+    category = "star"; // High sales, high rating
+  } else if (highVelocity && !highRating) {
+    category = "cash_cow"; // High sales, lower rating
+  } else if (!highVelocity && highRating) {
+    category = "question"; // Low sales, high rating (potential)
+  } else {
+    category = "dog"; // Low sales, low rating
+  }
+  
+  return { ...product, category, velocity, rating };
+}
 
 export default function DashboardPage() {
   const { user, isAuthenticated, isLoading, logout } = useAuth();
   const [, setLocation] = useLocation();
+
+  const { data: products = [] } = useQuery<Product[]>({
+    queryKey: ["/api/products"],
+  });
+
+  const { data: kegs = [] } = useQuery<Keg[]>({
+    queryKey: ["/api/kegs"],
+  });
 
   useEffect(() => {
     if (!isLoading && !isAuthenticated) {
       setLocation("/");
     }
   }, [isLoading, isAuthenticated, setLocation]);
+
+  // Categorize keg products for Stars vs Dogs matrix
+  const kegProducts = products.filter(p => p.isSoldByVolume);
+  const categorizedProducts = kegProducts.map(categorizeProduct);
+  
+  const stars = categorizedProducts.filter(p => p.category === "star");
+  const cashCows = categorizedProducts.filter(p => p.category === "cash_cow");
+  const questions = categorizedProducts.filter(p => p.category === "question");
+  const dogs = categorizedProducts.filter(p => p.category === "dog");
+
+  // Calculate real stats from data
+  const tappedKegs = kegs.filter(k => k.status === "tapped").length;
+  const onDeckKegs = kegs.filter(k => k.status === "on_deck").length;
+  
+  // Low stock: products with no on_deck kegs
+  const productKegCounts = products.reduce((acc, p) => {
+    const onDeck = kegs.filter(k => k.productId === p.id && k.status === "on_deck").length;
+    if (p.isSoldByVolume && onDeck === 0) {
+      acc.push(p.id);
+    }
+    return acc;
+  }, [] as number[]);
 
   if (isLoading) {
     return (
@@ -45,12 +110,11 @@ export default function DashboardPage() {
     setLocation("/");
   };
 
-  // Placeholder stats - will be replaced with real data
   const stats = {
-    lowStock: 5,
-    tappedKegs: 12,
-    onDeckKegs: 24,
-    pendingOrders: 2,
+    lowStock: productKegCounts.length,
+    tappedKegs,
+    onDeckKegs,
+    pendingOrders: 0,
   };
 
   return (
@@ -209,19 +273,126 @@ export default function DashboardPage() {
               </CardContent>
             </Card>
 
-            <Card className="bg-[#0a2419] border-2 border-[#1A4D2E] hover-elevate active-elevate-2 cursor-pointer overflow-visible">
-              <CardContent className="p-4 flex items-center gap-4">
-                <div className="w-12 h-12 rounded-lg bg-[#1A4D2E] flex items-center justify-center">
-                  <ShoppingCart className="w-6 h-6 text-[#D4AF37]" />
-                </div>
-                <div className="flex-1">
-                  <p className="font-medium text-white">Create Order</p>
-                  <p className="text-sm text-white/60">Restock low items</p>
-                </div>
-              </CardContent>
-            </Card>
+            <Link href="/smart-order">
+              <Card 
+                className="bg-[#0a2419] border-2 border-[#D4AF37]/50 hover-elevate active-elevate-2 cursor-pointer overflow-visible"
+                data-testid="card-smart-order"
+              >
+                <CardContent className="p-4 flex items-center gap-4">
+                  <div className="w-12 h-12 rounded-lg bg-[#D4AF37]/20 flex items-center justify-center">
+                    <Sparkles className="w-6 h-6 text-[#D4AF37]" />
+                  </div>
+                  <div className="flex-1">
+                    <p className="font-medium text-white">Smart Order</p>
+                    <p className="text-sm text-white/60">AI-powered reorder recommendations</p>
+                  </div>
+                  <Badge variant="outline" className="border-[#D4AF37] text-[#D4AF37] text-xs">
+                    New
+                  </Badge>
+                </CardContent>
+              </Card>
+            </Link>
           </div>
         </section>
+
+        {/* Stars vs Dogs Matrix - Admin Only */}
+        {user.role === "admin" && kegProducts.length > 0 && (
+          <section>
+            <h2 className="text-lg font-semibold text-white mb-4 flex items-center gap-2">
+              <Star className="w-5 h-5 text-[#D4AF37]" />
+              Stars vs Dogs Matrix
+            </h2>
+            <div className="grid grid-cols-2 gap-3">
+              {/* Stars - High velocity, High rating */}
+              <Card className="bg-[#0a2419] border-2 border-green-500/50">
+                <CardHeader className="pb-2 pt-3 px-3">
+                  <CardTitle className="text-sm text-green-400 flex items-center gap-2">
+                    <Star className="w-4 h-4 fill-green-400" />
+                    Stars ({stars.length})
+                  </CardTitle>
+                </CardHeader>
+                <CardContent className="px-3 pb-3">
+                  <p className="text-xs text-white/40 mb-2">High sales + High rating</p>
+                  {stars.slice(0, 3).map(p => (
+                    <p key={p.id} className="text-xs text-white truncate">{p.name}</p>
+                  ))}
+                  {stars.length > 3 && (
+                    <p className="text-xs text-white/40">+{stars.length - 3} more</p>
+                  )}
+                  {stars.length === 0 && (
+                    <p className="text-xs text-white/40 italic">None yet</p>
+                  )}
+                </CardContent>
+              </Card>
+
+              {/* Cash Cows - High velocity, Lower rating */}
+              <Card className="bg-[#0a2419] border-2 border-blue-500/50">
+                <CardHeader className="pb-2 pt-3 px-3">
+                  <CardTitle className="text-sm text-blue-400 flex items-center gap-2">
+                    <TrendingUp className="w-4 h-4" />
+                    Cash Cows ({cashCows.length})
+                  </CardTitle>
+                </CardHeader>
+                <CardContent className="px-3 pb-3">
+                  <p className="text-xs text-white/40 mb-2">High sales + Lower rating</p>
+                  {cashCows.slice(0, 3).map(p => (
+                    <p key={p.id} className="text-xs text-white truncate">{p.name}</p>
+                  ))}
+                  {cashCows.length > 3 && (
+                    <p className="text-xs text-white/40">+{cashCows.length - 3} more</p>
+                  )}
+                  {cashCows.length === 0 && (
+                    <p className="text-xs text-white/40 italic">None yet</p>
+                  )}
+                </CardContent>
+              </Card>
+
+              {/* Question Marks - Low velocity, High rating */}
+              <Card className="bg-[#0a2419] border-2 border-[#D4AF37]/50">
+                <CardHeader className="pb-2 pt-3 px-3">
+                  <CardTitle className="text-sm text-[#D4AF37] flex items-center gap-2">
+                    <AlertCircle className="w-4 h-4" />
+                    Question Marks ({questions.length})
+                  </CardTitle>
+                </CardHeader>
+                <CardContent className="px-3 pb-3">
+                  <p className="text-xs text-white/40 mb-2">Low sales + High rating</p>
+                  {questions.slice(0, 3).map(p => (
+                    <p key={p.id} className="text-xs text-white truncate">{p.name}</p>
+                  ))}
+                  {questions.length > 3 && (
+                    <p className="text-xs text-white/40">+{questions.length - 3} more</p>
+                  )}
+                  {questions.length === 0 && (
+                    <p className="text-xs text-white/40 italic">None yet</p>
+                  )}
+                </CardContent>
+              </Card>
+
+              {/* Dogs - Low velocity, Low rating */}
+              <Card className="bg-[#0a2419] border-2 border-red-500/50">
+                <CardHeader className="pb-2 pt-3 px-3">
+                  <CardTitle className="text-sm text-red-400 flex items-center gap-2">
+                    <TrendingDown className="w-4 h-4" />
+                    Dogs ({dogs.length})
+                  </CardTitle>
+                </CardHeader>
+                <CardContent className="px-3 pb-3">
+                  <p className="text-xs text-white/40 mb-2">Low sales + Low rating</p>
+                  {dogs.slice(0, 3).map(p => (
+                    <p key={p.id} className="text-xs text-white truncate">{p.name}</p>
+                  ))}
+                  {dogs.length > 3 && (
+                    <p className="text-xs text-white/40">+{dogs.length - 3} more</p>
+                  )}
+                  {dogs.length === 0 && (
+                    <p className="text-xs text-white/40 italic">None yet</p>
+                  )}
+                </CardContent>
+              </Card>
+            </div>
+          </section>
+        )}
       </main>
 
       {/* Bottom Navigation */}
