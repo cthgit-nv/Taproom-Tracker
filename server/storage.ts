@@ -41,8 +41,8 @@ export interface IStorage {
   
   // Kegs
   getKeg(id: number): Promise<Keg | undefined>;
-  getAllKegs(): Promise<Keg[]>;
-  getKegsByStatus(status: "on_deck" | "tapped" | "kicked"): Promise<Keg[]>;
+  getAllKegs(isSimulation?: boolean): Promise<Keg[]>;
+  getKegsByStatus(status: "on_deck" | "tapped" | "kicked", isSimulation?: boolean): Promise<Keg[]>;
   createKeg(keg: InsertKeg): Promise<Keg>;
   updateKeg(id: number, keg: Partial<InsertKeg>): Promise<Keg | undefined>;
   
@@ -59,8 +59,8 @@ export interface IStorage {
   
   // Inventory Sessions
   getInventorySession(id: number): Promise<InventorySession | undefined>;
-  getActiveSession(userId: number): Promise<InventorySession | undefined>;
-  getAllInventorySessions(): Promise<InventorySession[]>;
+  getActiveSession(userId: number, isSimulation?: boolean): Promise<InventorySession | undefined>;
+  getAllInventorySessions(isSimulation?: boolean): Promise<InventorySession[]>;
   createInventorySession(session: InsertInventorySession): Promise<InventorySession>;
   updateInventorySession(id: number, session: Partial<InsertInventorySession>): Promise<InventorySession | undefined>;
   
@@ -72,7 +72,7 @@ export interface IStorage {
   
   // Receiving Logs
   createReceivingLog(log: InsertReceivingLog): Promise<ReceivingLog>;
-  getReceivingLogs(): Promise<ReceivingLog[]>;
+  getReceivingLogs(isSimulation?: boolean): Promise<ReceivingLog[]>;
   
   // Product lookup
   getProductByUpc(upc: string): Promise<Product | undefined>;
@@ -168,11 +168,17 @@ export class DatabaseStorage implements IStorage {
     return result || undefined;
   }
 
-  async getAllKegs(): Promise<Keg[]> {
+  async getAllKegs(isSimulation?: boolean): Promise<Keg[]> {
+    if (isSimulation !== undefined) {
+      return db.select().from(kegs).where(eq(kegs.isSimulation, isSimulation));
+    }
     return db.select().from(kegs);
   }
 
-  async getKegsByStatus(status: "on_deck" | "tapped" | "kicked"): Promise<Keg[]> {
+  async getKegsByStatus(status: "on_deck" | "tapped" | "kicked", isSimulation?: boolean): Promise<Keg[]> {
+    if (isSimulation !== undefined) {
+      return db.select().from(kegs).where(and(eq(kegs.status, status), eq(kegs.isSimulation, isSimulation)));
+    }
     return db.select().from(kegs).where(eq(kegs.status, status));
   }
 
@@ -227,13 +233,25 @@ export class DatabaseStorage implements IStorage {
     return result || undefined;
   }
 
-  async getActiveSession(userId: number): Promise<InventorySession | undefined> {
+  async getActiveSession(userId: number, isSimulation?: boolean): Promise<InventorySession | undefined> {
+    if (isSimulation !== undefined) {
+      const [result] = await db.select().from(inventorySessions)
+        .where(and(
+          eq(inventorySessions.userId, userId), 
+          eq(inventorySessions.status, "in_progress"),
+          eq(inventorySessions.isSimulation, isSimulation)
+        ));
+      return result || undefined;
+    }
     const [result] = await db.select().from(inventorySessions)
       .where(and(eq(inventorySessions.userId, userId), eq(inventorySessions.status, "in_progress")));
     return result || undefined;
   }
 
-  async getAllInventorySessions(): Promise<InventorySession[]> {
+  async getAllInventorySessions(isSimulation?: boolean): Promise<InventorySession[]> {
+    if (isSimulation !== undefined) {
+      return db.select().from(inventorySessions).where(eq(inventorySessions.isSimulation, isSimulation));
+    }
     return db.select().from(inventorySessions);
   }
 
@@ -273,7 +291,10 @@ export class DatabaseStorage implements IStorage {
     return result;
   }
 
-  async getReceivingLogs(): Promise<ReceivingLog[]> {
+  async getReceivingLogs(isSimulation?: boolean): Promise<ReceivingLog[]> {
+    if (isSimulation !== undefined) {
+      return db.select().from(receivingLogs).where(eq(receivingLogs.isSimulation, isSimulation));
+    }
     return db.select().from(receivingLogs);
   }
 

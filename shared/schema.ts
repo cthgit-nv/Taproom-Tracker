@@ -74,6 +74,7 @@ export const products = pgTable("products", {
 
 // Kegs table - individual keg tracking
 // Status: on_deck = Back Inventory (full kegs waiting), tapped = linked to PMB/tap, kicked = empty
+// isSimulation: separates training data from production inventory
 export const kegs = pgTable("kegs", {
   id: integer("id").primaryKey().generatedAlwaysAsIdentity(),
   productId: integer("product_id").references(() => products.id).notNull(),
@@ -84,6 +85,7 @@ export const kegs = pgTable("kegs", {
   dateReceived: timestamp("date_received"),
   dateTapped: timestamp("date_tapped"),
   dateKicked: timestamp("date_kicked"),
+  isSimulation: boolean("is_simulation").notNull().default(false),
 });
 
 // Taps table - physical tap assignments
@@ -101,6 +103,7 @@ export const zones = pgTable("zones", {
 });
 
 // Inventory Sessions table - tracks counting sessions
+// isSimulation: separates training data from production inventory
 export const inventorySessions = pgTable("inventory_sessions", {
   id: integer("id").primaryKey().generatedAlwaysAsIdentity(),
   userId: integer("user_id").references(() => users.id).notNull(),
@@ -108,6 +111,7 @@ export const inventorySessions = pgTable("inventory_sessions", {
   status: text("status", { enum: ["in_progress", "completed", "cancelled"] }).notNull().default("in_progress"),
   startedAt: timestamp("started_at").notNull().defaultNow(),
   completedAt: timestamp("completed_at"),
+  isSimulation: boolean("is_simulation").notNull().default(false),
 });
 
 // Inventory Counts table - individual product counts within a session
@@ -124,6 +128,7 @@ export const inventoryCounts = pgTable("inventory_counts", {
 });
 
 // Receiving Log table - tracks incoming shipments
+// isSimulation: separates training data from production inventory
 export const receivingLogs = pgTable("receiving_logs", {
   id: integer("id").primaryKey().generatedAlwaysAsIdentity(),
   userId: integer("user_id").references(() => users.id).notNull(),
@@ -131,6 +136,7 @@ export const receivingLogs = pgTable("receiving_logs", {
   quantity: real("quantity").notNull(),
   isKeg: boolean("is_keg").notNull().default(false),
   receivedAt: timestamp("received_at").notNull().defaultNow(),
+  isSimulation: boolean("is_simulation").notNull().default(false),
 });
 
 // ==========================================

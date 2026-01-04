@@ -164,7 +164,10 @@ export async function registerRoutes(
   
   app.get("/api/kegs", async (_req: Request, res: Response) => {
     try {
-      const kegs = await storage.getAllKegs();
+      // Filter kegs by simulation mode from settings
+      const settings = await storage.getSettings();
+      const isSimulation = settings?.simulationMode ?? false;
+      const kegs = await storage.getAllKegs(isSimulation);
       return res.json(kegs);
     } catch (error) {
       console.error("Get kegs error:", error);
@@ -176,7 +179,10 @@ export async function registerRoutes(
   app.get("/api/kegs/product/:productId/summary", async (req: Request, res: Response) => {
     try {
       const productId = parseInt(req.params.productId);
-      const allKegs = await storage.getAllKegs();
+      // Filter kegs by simulation mode from settings
+      const settings = await storage.getSettings();
+      const isSimulation = settings?.simulationMode ?? false;
+      const allKegs = await storage.getAllKegs(isSimulation);
       const productKegs = allKegs.filter(k => k.productId === productId);
       
       const tappedKegs = productKegs.filter(k => k.status === "tapped");
@@ -246,6 +252,7 @@ export async function registerRoutes(
   // ========================
   
   // Start a new inventory session
+  // In simulation mode, sessions are tagged to keep training data separate
   app.post("/api/inventory/sessions", async (req: Request, res: Response) => {
     try {
       if (!req.session.userId) {
@@ -258,8 +265,12 @@ export async function registerRoutes(
         return res.status(400).json({ error: "Zone ID is required" });
       }
       
-      // Check for existing active session
-      const activeSession = await storage.getActiveSession(req.session.userId);
+      // Get simulation mode setting
+      const settings = await storage.getSettings();
+      const isSimulation = settings?.simulationMode ?? false;
+      
+      // Check for existing active session (in same mode)
+      const activeSession = await storage.getActiveSession(req.session.userId, isSimulation);
       if (activeSession) {
         return res.status(400).json({ error: "You already have an active session", session: activeSession });
       }
@@ -269,6 +280,7 @@ export async function registerRoutes(
         zoneId,
         status: "in_progress",
         completedAt: null,
+        isSimulation,
       });
       
       return res.json(session);
@@ -278,14 +290,18 @@ export async function registerRoutes(
     }
   });
 
-  // Get active session for current user
+  // Get active session for current user (filtered by current simulation mode)
   app.get("/api/inventory/sessions/active", async (req: Request, res: Response) => {
     try {
       if (!req.session.userId) {
         return res.status(401).json({ error: "Not authenticated" });
       }
       
-      const session = await storage.getActiveSession(req.session.userId);
+      // Get simulation mode setting
+      const settings = await storage.getSettings();
+      const isSimulation = settings?.simulationMode ?? false;
+      
+      const session = await storage.getActiveSession(req.session.userId, isSimulation);
       return res.json(session || null);
     } catch (error) {
       console.error("Get active session error:", error);
@@ -293,10 +309,14 @@ export async function registerRoutes(
     }
   });
 
-  // Get all inventory sessions (for dashboard)
+  // Get all inventory sessions (filtered by current simulation mode)
   app.get("/api/inventory/sessions/all", async (_req: Request, res: Response) => {
     try {
-      const sessions = await storage.getAllInventorySessions();
+      // Get simulation mode setting
+      const settings = await storage.getSettings();
+      const isSimulation = settings?.simulationMode ?? false;
+      
+      const sessions = await storage.getAllInventorySessions(isSimulation);
       return res.json(sessions);
     } catch (error) {
       console.error("Get all sessions error:", error);
@@ -436,6 +456,7 @@ export async function registerRoutes(
   });
 
   // Receive inventory - kegs go to kegs table, bottles add to backupCount
+  // In simulation mode, data is tagged with isSimulation=true to keep it separate
   app.post("/api/receiving", async (req: Request, res: Response) => {
     try {
       if (!req.session.userId) {
@@ -448,12 +469,17 @@ export async function registerRoutes(
         return res.status(400).json({ error: "Product ID and quantity are required" });
       }
       
-      // Create receiving log
+      // Get simulation mode setting
+      const settings = await storage.getSettings();
+      const isSimulation = settings?.simulationMode ?? false;
+      
+      // Create receiving log (tagged with simulation mode)
       const log = await storage.createReceivingLog({
         userId: req.session.userId,
         productId,
         quantity,
         isKeg: isKeg || false,
+        isSimulation,
       });
       
       if (isKeg) {
@@ -467,9 +493,11 @@ export async function registerRoutes(
           dateReceived: new Date(),
           dateTapped: null,
           dateKicked: null,
+          isSimulation,
         });
-      } else {
-        // For bottles/cans, receiving adds to backupCount (sealed inventory)
+      } else if (!isSimulation) {
+        // For bottles/cans in production mode, receiving adds to backupCount
+        // In simulation mode, we don't modify product counts
         const product = await storage.getProduct(productId);
         if (product) {
           const newBackupCount = (product.backupCount || 0) + quantity;
