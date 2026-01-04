@@ -237,3 +237,95 @@ export function isGoTabConfigured(): boolean {
     process.env.GOTAB_LOCATION_UUID
   );
 }
+
+// Product from GoTab catalog
+export interface GoTabProduct {
+  productUuid: string;
+  name: string;
+  shortName: string | null;
+  description: string | null;
+  basePrice: number;
+  category: string | null;
+  revenueAccount: string | null;
+  active: boolean;
+}
+
+// Fetch products from GoTab catalog
+export async function fetchProductCatalog(): Promise<GoTabProduct[]> {
+  const { locationUuid } = getCredentials();
+  const accessToken = await getAccessToken();
+  
+  const query = `
+    query Location($locationUuid: String!) {
+      location(locationUuid: $locationUuid) {
+        categoriesList {
+          name
+          categoryId
+          productsList {
+            productUuid
+            name
+            shortName
+            description
+            basePrice
+            archived
+          }
+        }
+      }
+    }
+  `;
+  
+  const variables = { locationUuid };
+  
+  try {
+    const response = await fetch(GOTAB_GRAPHQL_URL, {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${accessToken}`,
+        'Accept': 'application/json',
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ query, variables }),
+    });
+    
+    if (!response.ok) {
+      const errorText = await response.text();
+      console.error("GoTab catalog error:", response.status, errorText);
+      
+      if (response.status === 401 || response.status === 403) {
+        cachedToken = null;
+      }
+      
+      throw new Error(`GoTab API error: ${response.status}`);
+    }
+    
+    const data = await response.json();
+    
+    if (data.errors) {
+      console.error("GoTab GraphQL errors:", data.errors);
+      throw new Error(`GoTab GraphQL error: ${data.errors[0]?.message}`);
+    }
+    
+    const categories = data.data?.location?.categoriesList || [];
+    const products: GoTabProduct[] = [];
+    
+    for (const category of categories) {
+      for (const product of category.productsList || []) {
+        products.push({
+          productUuid: product.productUuid,
+          name: product.name,
+          shortName: product.shortName,
+          description: product.description,
+          basePrice: product.basePrice || 0,
+          category: category.name,
+          revenueAccount: null, // Not available in API
+          active: !product.archived, // Invert archived flag
+        });
+      }
+    }
+    
+    return products;
+  } catch (error) {
+    console.error("Error fetching GoTab catalog:", error);
+    throw error;
+  }
+}

@@ -4,7 +4,7 @@ import session from "express-session";
 import { storage } from "./storage";
 import { pinLoginSchema, insertProductSchema } from "@shared/schema";
 import { z } from "zod";
-import { fetchDailySales, isGoTabConfigured, type GoTabSalesResult } from "./gotab";
+import { fetchDailySales, fetchProductCatalog, isGoTabConfigured, type GoTabSalesResult, type GoTabProduct } from "./gotab";
 
 // Extend express-session types
 declare module "express-session" {
@@ -610,6 +610,142 @@ export async function registerRoutes(
       return res.json(salesData);
     } catch (error) {
       console.error("GoTab daily sales error:", error);
+      const message = error instanceof Error ? error.message : "Internal server error";
+      return res.status(500).json({ error: message });
+    }
+  });
+
+  // Preview products from GoTab catalog (read-only)
+  app.get("/api/gotab/products/preview", async (req: Request, res: Response) => {
+    try {
+      if (!req.session.userId) {
+        return res.status(401).json({ error: "Not authenticated" });
+      }
+      
+      const currentUser = await storage.getUser(req.session.userId);
+      if (!currentUser || currentUser.role !== "owner") {
+        return res.status(403).json({ error: "Owner access required" });
+      }
+      
+      if (!isGoTabConfigured()) {
+        return res.status(400).json({ error: "GoTab not configured" });
+      }
+      
+      const products = await fetchProductCatalog();
+      
+      // Group by category for easier review
+      const byCategory = new Map<string, GoTabProduct[]>();
+      for (const p of products) {
+        const cat = p.category || "Uncategorized";
+        if (!byCategory.has(cat)) byCategory.set(cat, []);
+        byCategory.get(cat)!.push(p);
+      }
+      
+      // Identify beverage products (Beer, Wine, Spirits, etc.)
+      const beverageCategories = ["Beer", "Draft", "Bottles", "Cans", "Wine", "Spirits", "Cocktails", "Drinks", "Beverages"];
+      const beverageProducts = products.filter(p => 
+        beverageCategories.some(cat => 
+          p.category?.toLowerCase().includes(cat.toLowerCase()) ||
+          p.revenueAccount?.toLowerCase().includes("alcohol") ||
+          p.revenueAccount?.toLowerCase().includes("beer") ||
+          p.revenueAccount?.toLowerCase().includes("beverage")
+        )
+      );
+      
+      return res.json({
+        totalProducts: products.length,
+        beverageCount: beverageProducts.length,
+        categories: Object.fromEntries(byCategory),
+        beverageProducts: beverageProducts.map(p => ({
+          name: p.name,
+          category: p.category,
+          price: p.basePrice,
+          revenueAccount: p.revenueAccount,
+          active: p.active,
+        })),
+      });
+    } catch (error) {
+      console.error("GoTab products preview error:", error);
+      const message = error instanceof Error ? error.message : "Internal server error";
+      return res.status(500).json({ error: message });
+    }
+  });
+
+  // Import products from GoTab (owner only)
+  app.post("/api/gotab/products/import", async (req: Request, res: Response) => {
+    try {
+      if (!req.session.userId) {
+        return res.status(401).json({ error: "Not authenticated" });
+      }
+      
+      const currentUser = await storage.getUser(req.session.userId);
+      if (!currentUser || currentUser.role !== "owner") {
+        return res.status(403).json({ error: "Owner access required" });
+      }
+      
+      if (!isGoTabConfigured()) {
+        return res.status(400).json({ error: "GoTab not configured" });
+      }
+      
+      const { categoryFilter } = req.body; // Optional: only import certain categories
+      
+      const goTabProducts = await fetchProductCatalog();
+      
+      // Filter by category if specified
+      let toImport = goTabProducts.filter(p => p.active);
+      if (categoryFilter && Array.isArray(categoryFilter)) {
+        toImport = toImport.filter(p => 
+          categoryFilter.some((cat: string) => 
+            p.category?.toLowerCase().includes(cat.toLowerCase())
+          )
+        );
+      }
+      
+      let imported = 0;
+      let skipped = 0;
+      const errors: string[] = [];
+      
+      for (const gp of toImport) {
+        try {
+          // Check if product already exists by name
+          const existingProducts = await storage.getAllProducts();
+          const exists = existingProducts.some(p => 
+            p.name.toLowerCase() === gp.name.toLowerCase()
+          );
+          
+          if (exists) {
+            skipped++;
+            continue;
+          }
+          
+          // Determine if this is a draft beer (sold by volume)
+          const isDraft = gp.category?.toLowerCase().includes("draft") || 
+                          gp.category?.toLowerCase().includes("tap");
+          
+          await storage.createProduct({
+            name: gp.name,
+            upc: gp.productUuid, // Use GoTab UUID as UPC for matching
+            pricePerUnit: gp.basePrice.toFixed(2),
+            isSoldByVolume: isDraft,
+            category: gp.category,
+            currentCountBottles: isDraft ? null : 0,
+            backupCount: isDraft ? null : 0,
+          });
+          
+          imported++;
+        } catch (err) {
+          errors.push(`Failed to import ${gp.name}: ${err instanceof Error ? err.message : 'Unknown error'}`);
+        }
+      }
+      
+      return res.json({
+        imported,
+        skipped,
+        errors,
+        message: `Imported ${imported} products, skipped ${skipped} existing`,
+      });
+    } catch (error) {
+      console.error("GoTab import error:", error);
       const message = error instanceof Error ? error.message : "Internal server error";
       return res.status(500).json({ error: message });
     }
