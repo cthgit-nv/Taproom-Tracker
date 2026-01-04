@@ -23,6 +23,9 @@ export const settings = pgTable("settings", {
   simulationMode: boolean("simulation_mode").notNull().default(true),
   pluRangeStart: integer("plu_range_start").notNull().default(1000),
   pluRangeEnd: integer("plu_range_end").notNull().default(2000),
+  gotabLocId: text("gotab_loc_id"),
+  gotabKey: text("gotab_key"),
+  gotabSecret: text("gotab_secret"),
 });
 
 // Distributors table
@@ -53,7 +56,7 @@ export const products = pgTable("products", {
   labelImageUrl: text("label_image_url"),
   isLocal: boolean("is_local").default(false),
   flavorTags: text("flavor_tags").array(),
-  currentCount: real("current_count").default(0),
+  currentCountBottles: real("current_count_bottles").default(0),
   parLevel: integer("par_level"),
   historicalVelocity: real("historical_velocity"),
 });
