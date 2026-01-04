@@ -8,6 +8,7 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { 
   ArrowLeft, 
   Camera, 
@@ -15,10 +16,14 @@ import {
   Plus,
   Package,
   Beer,
-  AlertCircle
+  AlertCircle,
+  Search,
+  Loader2,
+  Star
 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
-import type { Product, Distributor } from "@shared/schema";
+import type { Product, Distributor, Settings } from "@shared/schema";
+import { untappdService, type UntappdBeer } from "@/services/UntappdService";
 
 type Mode = "scanning" | "known_product" | "new_product";
 
@@ -37,6 +42,22 @@ export default function ReceivingPage() {
   const [newProductName, setNewProductName] = useState("");
   const [newProductDistributor, setNewProductDistributor] = useState<number | null>(null);
   const [isKeg, setIsKeg] = useState(false);
+  
+  // Untappd search state
+  const [showUntappdSearch, setShowUntappdSearch] = useState(false);
+  const [untappdSearchQuery, setUntappdSearchQuery] = useState("");
+  const [untappdResults, setUntappdResults] = useState<UntappdBeer[]>([]);
+  const [untappdSearching, setUntappdSearching] = useState(false);
+  const [selectedUntappdBeer, setSelectedUntappdBeer] = useState<UntappdBeer | null>(null);
+  
+  // Additional product fields from Untappd
+  const [newProductAbv, setNewProductAbv] = useState<number | null>(null);
+  const [newProductIbu, setNewProductIbu] = useState<number | null>(null);
+  const [newProductStyle, setNewProductStyle] = useState("");
+  const [newProductDescription, setNewProductDescription] = useState("");
+  const [newProductLabelUrl, setNewProductLabelUrl] = useState("");
+  const [newProductUntappdId, setNewProductUntappdId] = useState<number | null>(null);
+  const [newProductRating, setNewProductRating] = useState<number | null>(null);
 
   useEffect(() => {
     if (!authLoading && !isAuthenticated) {
@@ -51,6 +72,17 @@ export default function ReceivingPage() {
   const { data: products = [] } = useQuery<Product[]>({
     queryKey: ["/api/products"],
   });
+
+  const { data: settings } = useQuery<Settings>({
+    queryKey: ["/api/settings"],
+  });
+
+  // Configure Untappd service when settings load
+  useEffect(() => {
+    if (settings) {
+      untappdService.setConfig(settings);
+    }
+  }, [settings]);
 
   const receiveMutation = useMutation({
     mutationFn: async (data: { productId: number; quantity: number; isKeg: boolean }) => {
@@ -79,7 +111,19 @@ export default function ReceivingPage() {
   });
 
   const createProductMutation = useMutation({
-    mutationFn: async (data: { name: string; upc: string; distributorId: number | null }) => {
+    mutationFn: async (data: { 
+      name: string; 
+      upc: string; 
+      distributorId: number | null;
+      abv?: number | null;
+      ibu?: number | null;
+      style?: string;
+      description?: string;
+      labelImageUrl?: string;
+      untappdId?: number | null;
+      untappdRating?: number | null;
+      isSoldByVolume?: boolean;
+    }) => {
       const res = await apiRequest("POST", "/api/products", data);
       return res.json();
     },
@@ -89,6 +133,45 @@ export default function ReceivingPage() {
       setMode("known_product");
     },
   });
+
+  // Untappd search handler
+  const handleUntappdSearch = async () => {
+    if (!untappdSearchQuery.trim()) return;
+    
+    setUntappdSearching(true);
+    try {
+      const results = await untappdService.searchBeer(untappdSearchQuery);
+      setUntappdResults(results);
+    } catch (error) {
+      toast({
+        title: "Search Failed",
+        description: "Could not search Untappd",
+        variant: "destructive",
+      });
+    } finally {
+      setUntappdSearching(false);
+    }
+  };
+
+  // Select beer from Untappd results
+  const handleSelectUntappdBeer = (beer: UntappdBeer) => {
+    setSelectedUntappdBeer(beer);
+    setNewProductName(beer.name);
+    setNewProductAbv(beer.abv);
+    setNewProductIbu(beer.ibu);
+    setNewProductStyle(beer.style);
+    setNewProductDescription(beer.description);
+    setNewProductLabelUrl(beer.label);
+    setNewProductUntappdId(beer.id);
+    setNewProductRating(beer.rating);
+    setIsKeg(true); // Beer from Untappd is typically a keg
+    setShowUntappdSearch(false);
+    
+    toast({
+      title: "Beer Selected",
+      description: `${beer.name} details auto-filled`,
+    });
+  };
 
   const lookupProduct = async (upc: string) => {
     try {
@@ -156,6 +239,14 @@ export default function ReceivingPage() {
       name: newProductName,
       upc: scannedUpc,
       distributorId: newProductDistributor,
+      abv: newProductAbv,
+      ibu: newProductIbu,
+      style: newProductStyle,
+      description: newProductDescription,
+      labelImageUrl: newProductLabelUrl,
+      untappdId: newProductUntappdId,
+      untappdRating: newProductRating,
+      isSoldByVolume: isKeg,
     });
   };
 
@@ -167,6 +258,17 @@ export default function ReceivingPage() {
     setNewProductName("");
     setNewProductDistributor(null);
     setIsKeg(false);
+    // Reset Untappd fields
+    setSelectedUntappdBeer(null);
+    setNewProductAbv(null);
+    setNewProductIbu(null);
+    setNewProductStyle("");
+    setNewProductDescription("");
+    setNewProductLabelUrl("");
+    setNewProductUntappdId(null);
+    setNewProductRating(null);
+    setUntappdResults([]);
+    setUntappdSearchQuery("");
   };
 
   if (authLoading) {
@@ -376,16 +478,63 @@ export default function ReceivingPage() {
 
             <div className="space-y-4">
               <div className="space-y-2">
-                <Label className="text-white">Product Name</Label>
+                <div className="flex items-center justify-between">
+                  <Label className="text-white">Product Name</Label>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => {
+                      setUntappdSearchQuery(newProductName);
+                      setShowUntappdSearch(true);
+                    }}
+                    className="border-orange-400 text-orange-400"
+                    data-testid="button-search-untappd"
+                  >
+                    <Search className="w-4 h-4 mr-1" />
+                    Search Untappd
+                  </Button>
+                </div>
                 <Input
                   value={newProductName}
                   onChange={(e) => setNewProductName(e.target.value)}
-                  placeholder="e.g., Grey Goose Vodka 750ml"
+                  placeholder="e.g., Stone IPA"
                   className="h-12 bg-[#0a2419] border-2 border-[#1A4D2E] text-white"
                   autoFocus
                   data-testid="input-product-name"
                 />
               </div>
+
+              {/* Selected Untappd Beer Preview */}
+              {selectedUntappdBeer && (
+                <Card className="bg-[#0a2419] border-2 border-green-500/50">
+                  <CardContent className="p-3 flex items-center gap-3">
+                    {newProductLabelUrl && (
+                      <img 
+                        src={newProductLabelUrl} 
+                        alt={newProductName}
+                        className="w-14 h-14 rounded-lg object-cover"
+                      />
+                    )}
+                    <div className="flex-1">
+                      <p className="text-white font-medium text-sm">{newProductName}</p>
+                      <div className="flex items-center gap-2 text-xs text-white/60">
+                        {newProductAbv && <span>{newProductAbv}% ABV</span>}
+                        {newProductIbu && <span>{newProductIbu} IBU</span>}
+                        {newProductStyle && <span>{newProductStyle}</span>}
+                      </div>
+                      {newProductRating && (
+                        <div className="flex items-center gap-1 mt-1">
+                          <Star className="w-3 h-3 text-[#D4AF37] fill-[#D4AF37]" />
+                          <span className="text-xs text-[#D4AF37]">{newProductRating.toFixed(1)}</span>
+                        </div>
+                      )}
+                    </div>
+                    <Badge variant="outline" className="border-green-400 text-green-400 text-xs">
+                      Untappd
+                    </Badge>
+                  </CardContent>
+                </Card>
+              )}
 
               <div className="space-y-2">
                 <Label className="text-white">Distributor</Label>
@@ -451,6 +600,85 @@ export default function ReceivingPage() {
           </div>
         )}
       </main>
+
+      {/* Untappd Search Dialog */}
+      <Dialog open={showUntappdSearch} onOpenChange={setShowUntappdSearch}>
+        <DialogContent className="bg-[#0a2419] border-[#1A4D2E] max-w-md max-h-[80vh] overflow-hidden">
+          <DialogHeader>
+            <DialogTitle className="text-white flex items-center gap-2">
+              <Search className="w-5 h-5 text-orange-400" />
+              Search Untappd
+            </DialogTitle>
+          </DialogHeader>
+          
+          <div className="space-y-4">
+            <div className="flex gap-2">
+              <Input
+                value={untappdSearchQuery}
+                onChange={(e) => setUntappdSearchQuery(e.target.value)}
+                placeholder="e.g., Stone IPA"
+                className="flex-1 bg-[#051a11] border-[#1A4D2E] text-white"
+                onKeyDown={(e) => e.key === "Enter" && handleUntappdSearch()}
+                data-testid="input-untappd-search"
+              />
+              <Button
+                onClick={handleUntappdSearch}
+                disabled={untappdSearching || !untappdSearchQuery.trim()}
+                className="bg-orange-500 text-white"
+                data-testid="button-untappd-search-submit"
+              >
+                {untappdSearching ? <Loader2 className="w-4 h-4 animate-spin" /> : "Search"}
+              </Button>
+            </div>
+
+            <div className="max-h-[50vh] overflow-y-auto space-y-2">
+              {untappdResults.length === 0 && !untappdSearching && (
+                <p className="text-center text-white/40 py-4">
+                  Enter a beer name to search
+                </p>
+              )}
+              
+              {untappdSearching && (
+                <div className="flex items-center justify-center py-8">
+                  <Loader2 className="w-6 h-6 text-orange-400 animate-spin" />
+                </div>
+              )}
+
+              {untappdResults.map((beer) => (
+                <Card 
+                  key={beer.id} 
+                  className="bg-[#051a11] border-[#1A4D2E] cursor-pointer hover-elevate"
+                  onClick={() => handleSelectUntappdBeer(beer)}
+                  data-testid={`untappd-result-${beer.id}`}
+                >
+                  <CardContent className="p-3 flex items-center gap-3">
+                    {beer.label && (
+                      <img 
+                        src={beer.label} 
+                        alt={beer.name}
+                        className="w-12 h-12 rounded-lg object-cover"
+                      />
+                    )}
+                    <div className="flex-1 min-w-0">
+                      <p className="text-white font-medium text-sm truncate">{beer.name}</p>
+                      <p className="text-xs text-white/60 truncate">{beer.breweryName}</p>
+                      <div className="flex items-center gap-2 text-xs text-white/40">
+                        <span>{beer.abv}% ABV</span>
+                        {beer.ibu > 0 && <span>{beer.ibu} IBU</span>}
+                        <span className="truncate">{beer.style}</span>
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-1">
+                      <Star className="w-4 h-4 text-[#D4AF37] fill-[#D4AF37]" />
+                      <span className="text-[#D4AF37] font-medium">{beer.rating.toFixed(1)}</span>
+                    </div>
+                  </CardContent>
+                </Card>
+              ))}
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
