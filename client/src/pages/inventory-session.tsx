@@ -267,6 +267,7 @@ export default function InventorySessionPage() {
       toast({
         title: "Session Active",
         description: `Counting in ${zones.find(z => z.id === session.zoneId)?.name || "zone"}`,
+        duration: 2000,
       });
     },
     onError: (error: Error) => {
@@ -513,10 +514,12 @@ export default function InventorySessionPage() {
               {mode === "review" && "Review Session"}
               {mode === "view-completed" && "Completed Inventory"}
             </h1>
-            {activeSession && (
-              <p className="text-sm text-white/60">
-                {zones.find(z => z.id === activeSession.zoneId)?.name}
-              </p>
+            {activeSession && (mode === "list" || mode === "scan" || mode === "input") && (
+              <div className="flex items-center gap-2">
+                <Badge className="bg-[#1A4D2E] text-[#D4AF37] border-none text-sm px-3">
+                  {zones.find(z => z.id === activeSession.zoneId)?.name}
+                </Badge>
+              </div>
             )}
             {mode === "view-completed" && viewSessionData && (
               <p className="text-sm text-white/60">

@@ -162,7 +162,7 @@ export default function DashboardPage() {
         {/* Quick Actions */}
         <section>
           <h2 className="text-lg font-semibold text-white mb-4">Quick Actions</h2>
-          <div className="space-y-3">
+          <div className="grid gap-3">
             <Link href="/inventory-dashboard">
               <Card 
                 className="bg-[#0a2419] border-2 border-[#1A4D2E] hover-elevate active-elevate-2 cursor-pointer overflow-visible"
