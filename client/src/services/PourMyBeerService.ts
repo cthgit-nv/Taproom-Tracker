@@ -126,13 +126,14 @@ class PourMyBeerService {
         if (response.ok) {
           const data: KegLevelResponse = await response.json();
           const kegSizeOz = data.fill_level_keg_size / Math.pow(10, data.fill_level_keg_size_dp);
+          // fill_level_perc from PMB is 0-10000 (100.00%), so divide by 100 to get 0-100
           const fillPercent = data.fill_level_perc / 100;
           const remainingOz = (fillPercent / 100) * kegSizeOz;
 
           const kegLevel: KegLevel = {
             deviceId: data.device_id,
             lineNum: data.line_num,
-            fillLevelPercent: fillPercent,
+            fillLevelPercent: fillPercent, // Now stored as 0-100
             kegSizeOz: kegSizeOz,
             remainingOz: remainingOz,
             tappingDate: data.tapping_date ? new Date(data.tapping_date * 1000) : null,
@@ -177,16 +178,20 @@ class PourMyBeerService {
     return results;
   }
 
-  private kickCallbacks: Array<(tapNumber: number, deviceId: number, lineNum: number) => void> = [];
+  private kickCallbacks: Array<(tapNumber: number, productName?: string) => void> = [];
 
-  onKegKick(callback: (tapNumber: number, deviceId: number, lineNum: number) => void) {
+  /**
+   * Register a callback to be called when a keg kick is detected
+   * (when fill level drops to 0% from a non-zero value)
+   */
+  onKickDetected(callback: (tapNumber: number, productName?: string) => void) {
     this.kickCallbacks.push(callback);
   }
 
   private onKegKicked(tapNumber: number, deviceId: number, lineNum: number) {
     console.log(`Keg kicked on tap ${tapNumber} (device ${deviceId}, line ${lineNum})`);
     for (const callback of this.kickCallbacks) {
-      callback(tapNumber, deviceId, lineNum);
+      callback(tapNumber, undefined);
     }
   }
 

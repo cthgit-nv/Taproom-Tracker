@@ -28,14 +28,16 @@ import {
   BluetoothConnected,
   WifiOff,
   Wifi,
-  Settings,
+  Settings as SettingsIcon,
   Zap,
   Beer,
   Package,
-  Loader2
+  Loader2,
+  Gauge
 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
-import type { Zone, Product, InventorySession } from "@shared/schema";
+import type { Zone, Product, InventorySession, Settings } from "@shared/schema";
+import { pmbService, type KegLevel } from "@/services/PourMyBeerService";
 
 type Mode = "setup" | "list" | "scan" | "input" | "review" | "view-completed";
 
@@ -104,6 +106,10 @@ export default function InventorySessionPage() {
     totalKegEquivalent: number;
   } | null>(null);
   
+  // PMB real-time keg levels
+  const [pmbLevels, setPmbLevels] = useState<Map<number, KegLevel>>(new Map());
+  const [pmbConnected, setPmbConnected] = useState(false);
+  
   // View completed session state
   const [viewSessionId, setViewSessionId] = useState<number | null>(null);
   const [viewSessionData, setViewSessionData] = useState<{
@@ -128,7 +134,11 @@ export default function InventorySessionPage() {
         // Still loading - return 0 to prevent incorrect bottle math
         return 0;
       }
-      const tappedTotal = kegSummary.tapped.reduce((sum, k) => sum + k.remainingPercent, 0);
+      // Use PMB levels if available, otherwise fall back to DB values
+      const tappedTotal = kegSummary.tapped.reduce((sum, k) => {
+        const pmbLevel = k.tapNumber ? pmbLevels.get(k.tapNumber) : null;
+        return sum + (pmbLevel ? pmbLevel.fillLevelPercent / 100 : k.remainingPercent);
+      }, 0);
       return tappedTotal + coolerStock;
     } else {
       // Bottles: partial open + backup sealed count
@@ -229,6 +239,43 @@ export default function InventorySessionPage() {
     queryKey: ["/api/products"],
     enabled: !isOffline,
   });
+
+  const { data: settings } = useQuery<Settings>({
+    queryKey: ["/api/settings"],
+    enabled: !isOffline,
+  });
+
+  // Configure PMB service when settings load
+  useEffect(() => {
+    if (settings) {
+      pmbService.setConfig(settings);
+      setPmbConnected(pmbService.isConfigured());
+    }
+  }, [settings]);
+
+  // Register kick detection callback
+  useEffect(() => {
+    pmbService.onKickDetected((tapNumber, productName) => {
+      toast({
+        title: "Keg Kicked!",
+        description: `Tap ${tapNumber}${productName ? ` (${productName})` : ""} is empty`,
+        variant: "destructive",
+        duration: 10000,
+      });
+    });
+  }, []);
+
+  // Fetch PMB keg levels for current product
+  const fetchPmbLevels = useCallback(async (tapNumbers: number[]) => {
+    if (!pmbConnected || tapNumbers.length === 0) return;
+    
+    try {
+      const levels = await pmbService.getKegLevels(tapNumbers);
+      setPmbLevels(levels);
+    } catch (error) {
+      console.error("Failed to fetch PMB keg levels:", error);
+    }
+  }, [pmbConnected]);
 
   // Cache products for offline use
   useEffect(() => {
@@ -393,20 +440,32 @@ export default function InventorySessionPage() {
     // Initialize backup count from product data
     setBackupCount(product.backupCount || 0);
     
-    // For kegs, fetch the keg summary
+    // For kegs, fetch the keg summary and PMB levels
     if (product.isSoldByVolume) {
       setKegSummary(null);
+      setPmbLevels(new Map());
       try {
         const res = await fetch(`/api/kegs/product/${product.id}/summary`, { credentials: "include" });
         const summary = await res.json();
         setKegSummary(summary);
         setCoolerStock(summary.onDeckCount || 0);
+        
+        // Fetch real-time levels from PMB for tapped kegs
+        if (pmbConnected && summary.tapped?.length > 0) {
+          const tapNumbers = summary.tapped
+            .filter((k: { tapNumber: number | null }) => k.tapNumber !== null)
+            .map((k: { tapNumber: number }) => k.tapNumber);
+          if (tapNumbers.length > 0) {
+            fetchPmbLevels(tapNumbers);
+          }
+        }
       } catch (error) {
         console.error("Failed to fetch keg summary:", error);
       }
     } else {
       setKegSummary(null);
       setCoolerStock(0);
+      setPmbLevels(new Map());
     }
     
     setMode("input");
@@ -970,7 +1029,7 @@ export default function InventorySessionPage() {
                     className="text-white/40"
                     data-testid="button-edit-weights"
                   >
-                    <Settings className="w-5 h-5" />
+                    <SettingsIcon className="w-5 h-5" />
                   </Button>
                 )}
               </CardContent>
@@ -1079,14 +1138,14 @@ export default function InventorySessionPage() {
             {/* KEG INTERFACE */}
             {currentProduct.isSoldByVolume && (
               <>
-                {/* Tapped Kegs Display (Read-Only) */}
+                {/* Tapped Kegs Display (Read-Only from PMB) */}
                 <Card className="bg-[#0a2419] border-2 border-[#1A4D2E]">
                   <CardContent className="p-4">
                     <div className="flex items-center gap-2 mb-4">
-                      <Beer className="w-5 h-5 text-[#D4AF37]" />
-                      <span className="text-white font-medium">On Tap</span>
-                      <Badge variant="outline" className="border-white/40 text-white/40 text-xs ml-auto">
-                        Read Only (from PMB)
+                      <Gauge className="w-5 h-5 text-[#D4AF37]" />
+                      <span className="text-white font-medium">Active On Tap</span>
+                      <Badge variant="outline" className={`text-xs ml-auto ${pmbConnected ? "border-green-400 text-green-400" : "border-white/40 text-white/40"}`}>
+                        {pmbConnected ? "PMB Live" : "Simulation"}
                       </Badge>
                     </div>
                     
@@ -1098,35 +1157,51 @@ export default function InventorySessionPage() {
                       <p className="text-white/40 text-center py-4">No kegs currently tapped</p>
                     ) : (
                       <div className="space-y-2">
-                        {kegSummary.tapped.map((keg) => (
-                          <div 
-                            key={keg.kegId}
-                            className="flex items-center justify-between bg-[#051a11] p-3 rounded-lg"
-                          >
-                            <div className="flex items-center gap-3">
-                              <Badge className="bg-[#1A4D2E] text-[#D4AF37] border-none">
-                                Tap {keg.tapNumber || "?"}
-                              </Badge>
-                            </div>
-                            <div className="flex items-center gap-2">
-                              <div className="w-24 h-2 bg-[#1A4D2E] rounded-full overflow-hidden">
-                                <div 
-                                  className="h-full bg-[#D4AF37] rounded-full"
-                                  style={{ width: `${(keg.remainingPercent * 100)}%` }}
-                                />
+                        {kegSummary.tapped.map((keg) => {
+                          const pmbLevel = keg.tapNumber ? pmbLevels.get(keg.tapNumber) : null;
+                          const fillPercent = pmbLevel ? pmbLevel.fillLevelPercent : keg.remainingPercent * 100;
+                          const remainingGallons = pmbLevel 
+                            ? (pmbLevel.remainingOz / 128).toFixed(1) 
+                            : null;
+                          
+                          return (
+                            <div 
+                              key={keg.kegId}
+                              className="flex items-center justify-between bg-[#051a11] p-3 rounded-lg"
+                            >
+                              <div className="flex items-center gap-3">
+                                <Badge className="bg-[#1A4D2E] text-[#D4AF37] border-none">
+                                  Tap {keg.tapNumber || "?"}
+                                </Badge>
+                                {remainingGallons && (
+                                  <span className="text-white/80 text-sm font-medium">
+                                    {remainingGallons} gal
+                                  </span>
+                                )}
                               </div>
-                              <span className="text-white/60 text-sm w-12 text-right">
-                                {(keg.remainingPercent * 100).toFixed(0)}%
-                              </span>
+                              <div className="flex items-center gap-2">
+                                <div className="w-24 h-2 bg-[#1A4D2E] rounded-full overflow-hidden">
+                                  <div 
+                                    className={`h-full rounded-full ${fillPercent < 10 ? "bg-red-500" : fillPercent < 25 ? "bg-orange-400" : "bg-[#D4AF37]"}`}
+                                    style={{ width: `${fillPercent}%` }}
+                                  />
+                                </div>
+                                <span className="text-white/60 text-sm w-12 text-right">
+                                  {fillPercent.toFixed(0)}%
+                                </span>
+                              </div>
                             </div>
-                          </div>
-                        ))}
+                          );
+                        })}
                       </div>
                     )}
                     
                     {kegSummary && kegSummary.tapped.length > 0 && (
                       <p className="text-center text-sm text-white/40 mt-3">
-                        = {kegSummary.tapped.reduce((sum, k) => sum + k.remainingPercent, 0).toFixed(2)} kegs on tap
+                        = {kegSummary.tapped.reduce((sum, k) => {
+                          const pmbLevel = k.tapNumber ? pmbLevels.get(k.tapNumber) : null;
+                          return sum + (pmbLevel ? pmbLevel.fillLevelPercent / 100 : k.remainingPercent);
+                        }, 0).toFixed(2)} kegs on tap
                       </p>
                     )}
                   </CardContent>
@@ -1190,7 +1265,10 @@ export default function InventorySessionPage() {
                     </span>
                     <span className="text-white/40 text-sm">
                       {currentProduct.isSoldByVolume 
-                        ? `(${kegSummary?.tapped.reduce((s, k) => s + k.remainingPercent, 0).toFixed(1) || 0} tapped + ${coolerStock} cooler)`
+                        ? `(${kegSummary?.tapped.reduce((s, k) => {
+                            const pmbLevel = k.tapNumber ? pmbLevels.get(k.tapNumber) : null;
+                            return s + (pmbLevel ? pmbLevel.fillLevelPercent / 100 : k.remainingPercent);
+                          }, 0).toFixed(1) || 0} tapped + ${coolerStock} cooler)`
                         : `(${(partialPercent[0] / 100).toFixed(1)} open + ${backupCount} sealed)`
                       }
                     </span>
@@ -1202,7 +1280,7 @@ export default function InventorySessionPage() {
               <div className="p-4">
                 <Button
                   onClick={handleSaveCount}
-                  disabled={saveCountMutation.isPending || (currentProduct.isSoldByVolume && kegSummary === null)}
+                  disabled={saveCountMutation.isPending || (!!currentProduct.isSoldByVolume && kegSummary === null)}
                   className="w-full h-14 bg-[#1A4D2E] text-[#D4AF37] border-2 border-[#D4AF37] text-lg font-semibold"
                   data-testid="button-save-next"
                 >
