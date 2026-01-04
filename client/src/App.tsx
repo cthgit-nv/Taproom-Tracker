@@ -13,6 +13,8 @@ import ReceivingPage from "@/pages/receiving";
 import SmartOrderPage from "@/pages/smart-order";
 import AdminTeamPage from "@/pages/admin-team";
 import AdminIntegrationsPage from "@/pages/admin-integrations";
+import SettingsPage from "@/pages/settings";
+import KegsPage from "@/pages/kegs";
 import NotFound from "@/pages/not-found";
 import type { Settings } from "@shared/schema";
 
@@ -24,8 +26,8 @@ function SimulationBanner() {
   if (!settings?.simulationMode) return null;
   
   return (
-    <div className="fixed top-0 left-0 right-0 bg-orange-500 text-black text-center py-1 text-sm font-medium z-[100]">
-      SIMULATION MODE
+    <div className="fixed top-2 right-2 bg-orange-500/80 text-black text-center px-2 py-1 text-xs font-bold rounded-md z-[100] pointer-events-none backdrop-blur-sm shadow-lg">
+      SIM
     </div>
   );
 }
@@ -41,6 +43,8 @@ function Router() {
       <Route path="/smart-order" component={SmartOrderPage} />
       <Route path="/admin/team" component={AdminTeamPage} />
       <Route path="/admin/integrations" component={AdminIntegrationsPage} />
+      <Route path="/settings" component={SettingsPage} />
+      <Route path="/kegs" component={KegsPage} />
       <Route component={NotFound} />
     </Switch>
   );

@@ -444,9 +444,9 @@ export default function DashboardPage() {
         <div className="flex items-center justify-around">
           <NavItem icon={Home} label="Dashboard" active />
           <NavItem icon={Package} label="Inventory" href="/inventory-dashboard" />
-          <NavItem icon={Beer} label="Kegs" />
-          <NavItem icon={ShoppingCart} label="Orders" />
-          <NavItem icon={Settings} label="Settings" />
+          <NavItem icon={Beer} label="Kegs" href="/kegs" />
+          <NavItem icon={ShoppingCart} label="Orders" href="/smart-order" />
+          <NavItem icon={Settings} label="Settings" href="/settings" />
         </div>
       </nav>
     </div>
