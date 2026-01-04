@@ -6,6 +6,7 @@ import { pinLoginSchema, insertProductSchema } from "@shared/schema";
 import { z } from "zod";
 import { fetchDailySales, fetchProductCatalog, isGoTabConfigured, type GoTabSalesResult, type GoTabProduct } from "./gotab";
 import { isUntappdConfigured, previewTapList, fetchFullTapList, type UntappdMenuItem } from "./untappd";
+import { isBarcodeSpiderConfigured, lookupUpc, getApiStatus as getBarcodeSpiderStatus } from "./barcodespider";
 
 // Extend express-session types
 declare module "express-session" {
@@ -393,13 +394,43 @@ export async function registerRoutes(
   // Receiving Routes
   // ========================
   
-  // Look up product by UPC
+  // Look up product by UPC (internal database)
   app.get("/api/products/upc/:upc", async (req: Request, res: Response) => {
     try {
       const product = await storage.getProductByUpc(req.params.upc);
       return res.json(product || null);
     } catch (error) {
       console.error("Get product by UPC error:", error);
+      return res.status(500).json({ error: "Internal server error" });
+    }
+  });
+
+  // Look up UPC via Barcode Spider (external API)
+  app.get("/api/barcodespider/lookup/:upc", async (req: Request, res: Response) => {
+    try {
+      if (!req.session.userId) {
+        return res.status(401).json({ error: "Not authenticated" });
+      }
+      
+      if (!isBarcodeSpiderConfigured()) {
+        return res.status(400).json({ error: "Barcode Spider not configured" });
+      }
+      
+      const result = await lookupUpc(req.params.upc);
+      return res.json(result);
+    } catch (error) {
+      console.error("Barcode Spider lookup error:", error);
+      const message = error instanceof Error ? error.message : "Internal server error";
+      return res.status(500).json({ error: message });
+    }
+  });
+
+  // Check Barcode Spider API status
+  app.get("/api/barcodespider/status", async (req: Request, res: Response) => {
+    try {
+      const status = getBarcodeSpiderStatus();
+      return res.json(status);
+    } catch (error) {
       return res.status(500).json({ error: "Internal server error" });
     }
   });

@@ -175,6 +175,7 @@ export default function ReceivingPage() {
 
   const lookupProduct = async (upc: string) => {
     try {
+      // First check our internal database
       const res = await fetch(`/api/products/upc/${upc}`);
       const product = await res.json();
       
@@ -183,17 +184,43 @@ export default function ReceivingPage() {
         setIsKeg(product.isSoldByVolume || false);
         setMode("known_product");
         
-        // Play success sound simulation
         toast({
           title: product.name,
           description: product.isSoldByVolume ? "Keg detected" : "Enter quantity",
         });
       } else {
+        // Product not found in our database - try Barcode Spider
         setMode("new_product");
-        toast({
-          title: "New Item Found",
-          description: "Please enter product details",
-        });
+        
+        try {
+          const barcodeRes = await fetch(`/api/barcodespider/lookup/${upc}`);
+          if (barcodeRes.ok) {
+            const barcodeData = await barcodeRes.json();
+            if (barcodeData && barcodeData.title) {
+              // Pre-fill form with Barcode Spider data
+              setNewProductName(barcodeData.title);
+              toast({
+                title: "Product Found",
+                description: `Found: ${barcodeData.title}`,
+              });
+            } else {
+              toast({
+                title: "New Item",
+                description: "Product not in database. Enter details manually.",
+              });
+            }
+          } else {
+            toast({
+              title: "New Item",
+              description: "Please enter product details",
+            });
+          }
+        } catch {
+          toast({
+            title: "New Item",
+            description: "Please enter product details",
+          });
+        }
       }
     } catch (error) {
       console.error("Lookup error:", error);
