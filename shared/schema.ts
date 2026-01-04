@@ -28,6 +28,9 @@ export const settings = pgTable("settings", {
   gotabLocId: text("gotab_loc_id"),
   gotabKey: text("gotab_key"),
   gotabSecret: text("gotab_secret"),
+  untappdReadToken: text("untappd_read_token"),
+  untappdWriteToken: text("untappd_write_token"),
+  untappdMenuId: text("untappd_menu_id"),
 });
 
 // Distributors table
@@ -64,6 +67,8 @@ export const products = pgTable("products", {
   parLevel: integer("par_level"),
   historicalVelocity: real("historical_velocity"),
   backupCount: integer("backup_count").default(0),
+  untappdRating: real("untappd_rating"),
+  untappdRatingCount: integer("untappd_rating_count"),
 });
 
 // Kegs table - individual keg tracking

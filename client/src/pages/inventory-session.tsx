@@ -277,6 +277,27 @@ export default function InventorySessionPage() {
     }
   }, [pmbConnected]);
 
+  // Periodic refresh of PMB levels (every 30 seconds)
+  useEffect(() => {
+    if (!pmbConnected || !kegSummary?.tapped?.length) return;
+
+    const tapNumbers = kegSummary.tapped
+      .filter((k) => k.tapNumber !== null)
+      .map((k) => k.tapNumber as number);
+
+    if (tapNumbers.length === 0) return;
+
+    // Initial fetch on login/mount
+    fetchPmbLevels(tapNumbers);
+
+    // Set up periodic refresh
+    const intervalId = setInterval(() => {
+      fetchPmbLevels(tapNumbers);
+    }, 30000); // 30 seconds
+
+    return () => clearInterval(intervalId);
+  }, [pmbConnected, kegSummary, fetchPmbLevels]);
+
   // Cache products for offline use
   useEffect(() => {
     if (productsLoaded && products.length > 0) {
