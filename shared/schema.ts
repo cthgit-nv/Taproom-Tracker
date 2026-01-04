@@ -42,6 +42,10 @@ export const distributors = pgTable("distributors", {
   orderMinimum: decimal("order_minimum", { precision: 10, scale: 2 }),
 });
 
+// Beverage type enum for filtering
+export const beverageTypeEnum = ["beer", "cider", "wine", "liquor", "na"] as const;
+export type BeverageType = typeof beverageTypeEnum[number];
+
 // Products table - inventory items
 export const products = pgTable("products", {
   id: integer("id").primaryKey().generatedAlwaysAsIdentity(),
@@ -70,6 +74,9 @@ export const products = pgTable("products", {
   backupCount: integer("backup_count").default(0),
   untappdRating: real("untappd_rating"),
   untappdRatingCount: integer("untappd_rating_count"),
+  manufacturer: text("manufacturer"),
+  beverageType: text("beverage_type", { enum: beverageTypeEnum }).default("beer"),
+  notes: text("notes"),
 });
 
 // Kegs table - individual keg tracking
@@ -273,3 +280,18 @@ export const pinLoginSchema = z.object({
 });
 
 export type PinLogin = z.infer<typeof pinLoginSchema>;
+
+// Partial update schema for products (editable fields)
+export const updateProductSchema = z.object({
+  distributorId: z.number().nullable().optional(),
+  isLocal: z.boolean().optional(),
+  notes: z.string().nullable().optional(),
+  manufacturer: z.string().nullable().optional(),
+  beverageType: z.enum(beverageTypeEnum).optional(),
+  style: z.string().nullable().optional(),
+  costPerUnit: z.string().nullable().optional(),
+  pricePerUnit: z.string().nullable().optional(),
+  parLevel: z.number().nullable().optional(),
+});
+
+export type UpdateProduct = z.infer<typeof updateProductSchema>;

@@ -166,7 +166,7 @@ export default function SettingsPage() {
       <nav className="fixed bottom-0 left-0 right-0 bg-[#0a2419] border-t border-[#1A4D2E] px-2 py-2 safe-area-pb">
         <div className="flex items-center justify-around">
           <NavItem icon={Home} label="Dashboard" href="/dashboard" />
-          <NavItem icon={Package} label="Inventory" href="/inventory-dashboard" />
+          <NavItem icon={Package} label="Products" href="/products" />
           <NavItem icon={Beer} label="Kegs" href="/kegs" />
           <NavItem icon={ShoppingCart} label="Orders" href="/smart-order" />
           <NavItem icon={SettingsIcon} label="Settings" active />
