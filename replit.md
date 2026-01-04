@@ -30,9 +30,21 @@ Preferred communication style: Simple, everyday language.
 - **Migrations**: Drizzle Kit for schema management (`db:push` script)
 
 ### Authentication
-- **Method**: 4-digit PIN code authentication
+- **Method**: 4-digit PIN code authentication (Blind PIN entry)
 - **Session**: Server-side sessions with HTTP-only cookies
-- **Roles**: Admin and Staff user roles defined in schema
+- **Roles**: 3-tier permission system (Owner > Admin > Staff)
+  - **Owner**: Full access including team management, API keys, all reports
+  - **Admin**: Simulation mode toggle, GoTab sync, Stars vs Dogs matrix
+  - **Staff**: Day-to-day operations (inventory counts, receiving)
+
+### External Integrations
+- **GoTab POS**: Read-only sales integration via GraphQL API
+  - OAuth client credentials flow for authentication
+  - Daily sales sync deducts bottles/cans from inventory
+  - Draft beer revenue tracked (quantity from PMB sensors)
+  - Environment variables: GOTAB_API_KEY, GOTAB_API_SECRET, GOTAB_LOCATION_UUID
+- **PourMyBeer**: Planned integration for keg level sensors
+- **Untappd**: Product ratings and velocity data
 
 ### Project Structure
 ```
