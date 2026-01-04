@@ -169,6 +169,47 @@ export async function registerRoutes(
     }
   });
 
+  // Get keg inventory summary for a product (tapped and on_deck kegs)
+  app.get("/api/kegs/product/:productId/summary", async (req: Request, res: Response) => {
+    try {
+      const productId = parseInt(req.params.productId);
+      const allKegs = await storage.getAllKegs();
+      const productKegs = allKegs.filter(k => k.productId === productId);
+      
+      const tappedKegs = productKegs.filter(k => k.status === "tapped");
+      const onDeckKegs = productKegs.filter(k => k.status === "on_deck");
+      
+      // Get tap info for tapped kegs
+      const taps = await storage.getAllTaps();
+      const tappedWithTaps = tappedKegs.map(keg => {
+        const tap = taps.find(t => t.currentKegId === keg.id);
+        const remainingPercent = keg.remainingVolOz && keg.initialVolOz 
+          ? (keg.remainingVolOz / keg.initialVolOz) 
+          : 0;
+        return {
+          kegId: keg.id,
+          tapNumber: tap?.tapNumber || keg.tapNumber,
+          remainingPercent,
+          remainingVolOz: keg.remainingVolOz,
+          initialVolOz: keg.initialVolOz,
+        };
+      });
+      
+      // Calculate total keg equivalent (on_deck = 1.0 each, tapped = remaining %)
+      const onDeckTotal = onDeckKegs.length;
+      const tappedTotal = tappedWithTaps.reduce((sum, k) => sum + k.remainingPercent, 0);
+      
+      return res.json({
+        tapped: tappedWithTaps,
+        onDeckCount: onDeckTotal,
+        totalKegEquivalent: onDeckTotal + tappedTotal,
+      });
+    } catch (error) {
+      console.error("Get keg summary error:", error);
+      return res.status(500).json({ error: "Internal server error" });
+    }
+  });
+
   // ========================
   // Taps Routes
   // ========================
@@ -347,7 +388,7 @@ export async function registerRoutes(
     }
   });
 
-  // Receive inventory
+  // Receive inventory - kegs go to kegs table, bottles add to backupKegCount
   app.post("/api/receiving", async (req: Request, res: Response) => {
     try {
       if (!req.session.userId) {
@@ -368,8 +409,9 @@ export async function registerRoutes(
         isKeg: isKeg || false,
       });
       
-      // If it's a keg, create a new keg record
       if (isKeg) {
+        // For kegs, create keg record with on_deck status (cooler stock)
+        // The kegs table is the source of truth for keg inventory
         await storage.createKeg({
           productId,
           status: "on_deck",
@@ -380,11 +422,11 @@ export async function registerRoutes(
           dateKicked: null,
         });
       } else {
-        // Update product count for bottles
+        // For bottles/cans, receiving adds to backupKegCount (sealed inventory)
         const product = await storage.getProduct(productId);
         if (product) {
-          const newCount = (product.currentCountBottles || 0) + quantity;
-          await storage.updateProduct(productId, { currentCountBottles: newCount });
+          const newBackupCount = (product.backupKegCount || 0) + quantity;
+          await storage.updateProduct(productId, { backupKegCount: newBackupCount });
         }
       }
       
