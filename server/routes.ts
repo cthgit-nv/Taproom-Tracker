@@ -4,6 +4,7 @@ import session from "express-session";
 import { storage } from "./storage";
 import { pinLoginSchema, insertProductSchema } from "@shared/schema";
 import { z } from "zod";
+import { fetchDailySales, isGoTabConfigured, type GoTabSalesResult } from "./gotab";
 
 // Extend express-session types
 declare module "express-session" {
@@ -496,7 +497,29 @@ export async function registerRoutes(
   // GoTab Sales Integration Routes (Admin/Owner Only)
   // ========================
   
-  // Sync daily sales from GoTab (read-only integration)
+  // Check GoTab configuration status
+  app.get("/api/gotab/status", async (req: Request, res: Response) => {
+    try {
+      if (!req.session.userId) {
+        return res.status(401).json({ error: "Not authenticated" });
+      }
+      
+      const currentUser = await storage.getUser(req.session.userId);
+      if (!currentUser || !["admin", "owner"].includes(currentUser.role)) {
+        return res.status(403).json({ error: "Admin access required" });
+      }
+      
+      return res.json({ 
+        configured: isGoTabConfigured(),
+        message: isGoTabConfigured() ? "GoTab is configured" : "GoTab credentials not set"
+      });
+    } catch (error) {
+      console.error("GoTab status error:", error);
+      return res.status(500).json({ error: "Internal server error" });
+    }
+  });
+  
+  // Sync daily sales from GoTab and update inventory
   app.post("/api/gotab/sync", async (req: Request, res: Response) => {
     try {
       if (!req.session.userId) {
@@ -508,41 +531,63 @@ export async function registerRoutes(
         return res.status(403).json({ error: "Admin access required" });
       }
       
-      const settings = await storage.getSettings();
-      
-      if (!settings?.gotabLocId || !settings?.gotabKey || !settings?.gotabSecret) {
-        return res.status(400).json({ error: "GoTab not configured" });
+      if (!isGoTabConfigured()) {
+        return res.status(400).json({ error: "GoTab not configured. Set environment variables." });
       }
       
-      // In production, this would call GoTab API
-      // For now, simulate the sync process
+      const { date } = req.body;
+      const targetDate = date ? new Date(date) : new Date();
+      
+      // Fetch sales from GoTab API
+      const salesData = await fetchDailySales(targetDate);
+      
+      // Process sales: deduct bottles/cans from inventory
       const products = await storage.getAllProducts();
       let processed = 0;
+      let deducted = 0;
       const errors: string[] = [];
       
-      // Simulate processing sales data
-      // Draft beers (isSoldByVolume=true): Only record revenue, ignore quantity (PMB sensors handle this)
-      // Bottles/Cans (isSoldByVolume=false): Deduct sold quantity from currentCountBottles
-      
-      for (const product of products) {
-        if (!product.isSoldByVolume) {
-          // For bottles/cans, we would deduct from currentCountBottles
-          // Example: await storage.updateProduct(product.id, { currentCountBottles: newCount });
-          processed++;
-        } else {
-          // For draft beer, we only track revenue (quantity from PMB)
-          processed++;
+      for (const saleItem of salesData.items) {
+        // Find matching product by UPC, PLU, or name
+        const product = products.find(p => 
+          p.upc === saleItem.sku || 
+          p.plu?.toString() === saleItem.sku ||
+          p.name.toLowerCase() === saleItem.name.toLowerCase()
+        );
+        
+        if (!product) {
+          errors.push(`Product not found: ${saleItem.name} (SKU: ${saleItem.sku})`);
+          continue;
         }
+        
+        processed++;
+        
+        // Only deduct from bottles/cans (not draft beer which is tracked by PMB sensors)
+        if (!product.isSoldByVolume && product.currentCountBottles !== null) {
+          const newCount = Math.max(0, (product.currentCountBottles || 0) - saleItem.quantitySold);
+          await storage.updateProduct(product.id, { currentCountBottles: newCount });
+          deducted++;
+        }
+        // Draft beer (isSoldByVolume=true): revenue tracked but quantity comes from PMB sensors
       }
       
-      return res.json({ processed, errors, message: "GoTab sync completed" });
+      return res.json({ 
+        date: salesData.date,
+        processed, 
+        deducted,
+        totalRevenue: salesData.totalRevenue,
+        tabCount: salesData.tabCount,
+        errors,
+        message: `Synced ${processed} items, deducted ${deducted} bottle/can products` 
+      });
     } catch (error) {
       console.error("GoTab sync error:", error);
-      return res.status(500).json({ error: "Internal server error" });
+      const message = error instanceof Error ? error.message : "Internal server error";
+      return res.status(500).json({ error: message });
     }
   });
 
-  // Get daily sales from GoTab
+  // Get daily sales from GoTab (read-only, no inventory update)
   app.post("/api/gotab/daily-sales", async (req: Request, res: Response) => {
     try {
       if (!req.session.userId) {
@@ -554,23 +599,19 @@ export async function registerRoutes(
         return res.status(403).json({ error: "Admin access required" });
       }
       
-      const { date } = req.body;
-      const settings = await storage.getSettings();
-      
-      if (!settings?.gotabLocId || !settings?.gotabKey || !settings?.gotabSecret) {
-        return res.status(400).json({ error: "GoTab not configured" });
+      if (!isGoTabConfigured()) {
+        return res.status(400).json({ error: "GoTab not configured. Set environment variables." });
       }
       
-      // In production, this would fetch from GoTab API
-      // For now, return simulated data
-      return res.json({
-        date: date || new Date().toISOString().split('T')[0],
-        items: [],
-        totalRevenue: 0,
-      });
+      const { date } = req.body;
+      const targetDate = date ? new Date(date) : new Date();
+      
+      const salesData = await fetchDailySales(targetDate);
+      return res.json(salesData);
     } catch (error) {
       console.error("GoTab daily sales error:", error);
-      return res.status(500).json({ error: "Internal server error" });
+      const message = error instanceof Error ? error.message : "Internal server error";
+      return res.status(500).json({ error: message });
     }
   });
 
