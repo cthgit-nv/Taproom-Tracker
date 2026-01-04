@@ -20,6 +20,8 @@ import type { Zone, InventorySession } from "@shared/schema";
 
 interface ZoneWithHistory extends Zone {
   lastCompleted: string | null;
+  lastCompletedSessionId: number | null;
+  isStale: boolean; // true if never counted or > 1 day old
   activeSession: InventorySession | null;
 }
 
@@ -67,17 +69,29 @@ export default function InventoryDashboardPage() {
   const zonesWithHistory: ZoneWithHistory[] = zones.map(zone => {
     const zoneSessions = sessions.filter(s => s.zoneId === zone.id);
     const completedSessions = zoneSessions.filter(s => s.status === "completed");
-    const lastCompleted = completedSessions.length > 0
-      ? completedSessions.sort((a, b) => 
-          new Date(b.completedAt || 0).getTime() - new Date(a.completedAt || 0).getTime()
-        )[0].completedAt
-      : null;
+    const sortedCompleted = completedSessions.sort((a, b) => 
+      new Date(b.completedAt || 0).getTime() - new Date(a.completedAt || 0).getTime()
+    );
+    const lastSession = sortedCompleted[0] || null;
+    const lastCompleted = lastSession?.completedAt || null;
+    
+    // Calculate if zone is stale (never counted or > 1 day old)
+    let isStale = true;
+    if (lastCompleted) {
+      const completedDate = new Date(lastCompleted);
+      const now = new Date();
+      const diffMs = now.getTime() - completedDate.getTime();
+      const diffHours = diffMs / (1000 * 60 * 60);
+      isStale = diffHours > 24;
+    }
     
     const zoneActiveSession = zoneSessions.find(s => s.status === "in_progress") || null;
     
     return {
       ...zone,
       lastCompleted: lastCompleted ? new Date(lastCompleted).toLocaleString() : null,
+      lastCompletedSessionId: lastSession?.id || null,
+      isStale,
       activeSession: zoneActiveSession,
     };
   });
@@ -105,6 +119,40 @@ export default function InventoryDashboardPage() {
   const handleStartNewForZone = (zoneId: number) => {
     // Navigate to inventory with zone pre-selected via URL param
     setLocation(`/inventory?zone=${zoneId}`);
+  };
+
+  const handleViewSession = (sessionId: number) => {
+    // Navigate to view completed session
+    setLocation(`/inventory?view=${sessionId}`);
+  };
+
+  const handleZoneClick = (zone: ZoneWithHistory) => {
+    // If there's an active session in this zone, continue it
+    if (activeSession?.zoneId === zone.id) {
+      handleContinueSession();
+      return;
+    }
+    
+    // If there's any active session, don't allow starting a new one
+    if (activeSession) {
+      toast({
+        title: "Session in Progress",
+        description: "Please complete or cancel your current session first",
+        variant: "destructive",
+      });
+      return;
+    }
+    
+    // If zone is stale (never counted or > 1 day old), start new inventory
+    if (zone.isStale) {
+      handleStartNewForZone(zone.id);
+    } else if (zone.lastCompletedSessionId) {
+      // If zone was counted recently, view the completed inventory
+      handleViewSession(zone.lastCompletedSessionId);
+    } else {
+      // Fallback to starting new
+      handleStartNewForZone(zone.id);
+    }
   };
 
   if (authLoading) {
@@ -194,13 +242,7 @@ export default function InventoryDashboardPage() {
                       : "border-[#1A4D2E] hover-elevate cursor-pointer"
                     }
                   `}
-                  onClick={() => {
-                    if (!activeSession) {
-                      handleStartNewForZone(zone.id);
-                    } else if (isCurrentActiveZone) {
-                      handleContinueSession();
-                    }
-                  }}
+                  onClick={() => handleZoneClick(zone)}
                   data-testid={`zone-card-${zone.id}`}
                 >
                   <CardContent className="p-4">

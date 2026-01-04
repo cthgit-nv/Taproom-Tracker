@@ -34,7 +34,7 @@ import {
 import { useToast } from "@/hooks/use-toast";
 import type { Zone, Product, InventorySession } from "@shared/schema";
 
-type Mode = "setup" | "list" | "scan" | "input" | "review";
+type Mode = "setup" | "list" | "scan" | "input" | "review" | "view-completed";
 
 interface CountData {
   productId: number;
@@ -87,6 +87,19 @@ export default function InventorySessionPage() {
   
   const [fullBottles, setFullBottles] = useState(0);
   const [partialPercent, setPartialPercent] = useState([0]);
+  
+  // View completed session state
+  const [viewSessionId, setViewSessionId] = useState<number | null>(null);
+  const [viewSessionData, setViewSessionData] = useState<{
+    session: InventorySession;
+    counts: Array<{
+      id: number;
+      productId: number;
+      countedBottles: number;
+      countedPartialOz: number | null;
+      isManualEstimate: boolean;
+    }>;
+  } | null>(null);
 
   // Calculate total units
   const totalUnits = fullBottles + (partialPercent[0] / 100);
@@ -136,6 +149,35 @@ export default function InventorySessionPage() {
       setLocation("/");
     }
   }, [authLoading, isAuthenticated, setLocation]);
+
+  // Parse URL params for zone or view mode
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const zoneParam = params.get("zone");
+    const viewParam = params.get("view");
+    
+    if (viewParam) {
+      const sessionId = parseInt(viewParam);
+      if (!isNaN(sessionId)) {
+        setViewSessionId(sessionId);
+        setMode("view-completed");
+        // Fetch the session data
+        fetch(`/api/inventory/sessions/${sessionId}`, { credentials: "include" })
+          .then(res => res.json())
+          .then(data => {
+            if (data.session) {
+              setViewSessionData(data);
+            }
+          })
+          .catch(console.error);
+      }
+    } else if (zoneParam) {
+      const zoneId = parseInt(zoneParam);
+      if (!isNaN(zoneId)) {
+        setSelectedZone(zoneId);
+      }
+    }
+  }, []);
 
   const { data: zones = [] } = useQuery<Zone[]>({
     queryKey: ["/api/zones"],
@@ -440,8 +482,10 @@ export default function InventorySessionPage() {
                 setMode("setup");
               } else if (mode === "review") {
                 setMode("list");
+              } else if (mode === "view-completed") {
+                setLocation("/inventory-dashboard");
               } else {
-                setLocation("/dashboard");
+                setLocation("/inventory-dashboard");
               }
             }}
             className="text-white/60"
@@ -456,10 +500,20 @@ export default function InventorySessionPage() {
               {mode === "scan" && "Quick Scan"}
               {mode === "input" && "Count Item"}
               {mode === "review" && "Review Session"}
+              {mode === "view-completed" && "Completed Inventory"}
             </h1>
             {activeSession && (
               <p className="text-sm text-white/60">
                 {zones.find(z => z.id === activeSession.zoneId)?.name}
+              </p>
+            )}
+            {mode === "view-completed" && viewSessionData && (
+              <p className="text-sm text-white/60">
+                {zones.find(z => z.id === viewSessionData.session.zoneId)?.name} - {
+                  viewSessionData.session.completedAt 
+                    ? new Date(viewSessionData.session.completedAt).toLocaleDateString()
+                    : ""
+                }
               </p>
             )}
           </div>
@@ -1017,6 +1071,93 @@ export default function InventorySessionPage() {
                 data-testid="button-submit-session"
               >
                 {finishSessionMutation.isPending ? "Submitting..." : "Finish Session"}
+              </Button>
+            </div>
+          </div>
+        )}
+
+        {/* VIEW COMPLETED MODE */}
+        {mode === "view-completed" && viewSessionData && (
+          <div className="space-y-4 pb-24">
+            <div className="flex items-center justify-between">
+              <h2 className="text-lg font-medium text-white">Completed Counts</h2>
+              <Badge variant="outline" className="border-green-400 text-green-400">
+                <Check className="w-3 h-3 mr-1" />
+                Completed
+              </Badge>
+            </div>
+            
+            <Card className="bg-[#0a2419] border border-[#1A4D2E]">
+              <CardContent className="p-4">
+                <p className="text-sm text-white/60">
+                  Completed: {viewSessionData.session.completedAt 
+                    ? new Date(viewSessionData.session.completedAt).toLocaleString()
+                    : "Unknown"
+                  }
+                </p>
+                <p className="text-sm text-white/60 mt-1">
+                  Items counted: {viewSessionData.counts.length}
+                </p>
+              </CardContent>
+            </Card>
+            
+            {viewSessionData.counts.length === 0 ? (
+              <Card className="bg-[#0a2419] border border-[#1A4D2E]">
+                <CardContent className="p-6 text-center text-white/60">
+                  No items were counted in this session
+                </CardContent>
+              </Card>
+            ) : (
+              viewSessionData.counts.map((count) => {
+                const product = displayProducts.find(p => p.id === count.productId);
+                if (!product) return null;
+                
+                const totalUnits = count.countedBottles + (count.countedPartialOz 
+                  ? count.countedPartialOz / ((product.bottleSizeMl || 750) / 29.574) 
+                  : 0);
+                
+                return (
+                  <Card 
+                    key={count.id}
+                    className="bg-[#0a2419] border-2 border-[#1A4D2E]"
+                  >
+                    <CardContent className="p-4">
+                      <div className="flex items-center justify-between">
+                        <div className="flex-1">
+                          <div className="flex items-center gap-2">
+                            <p className="font-medium text-white">{product.name}</p>
+                            <Badge variant="outline" className={`text-xs ${
+                              count.isManualEstimate 
+                                ? "border-orange-400 text-orange-400" 
+                                : "border-blue-400 text-blue-400"
+                            }`}>
+                              {count.isManualEstimate ? "Manual" : "Scale"}
+                            </Badge>
+                          </div>
+                          <p className="text-sm text-white/60">
+                            {count.countedBottles} bottles
+                            {count.countedPartialOz && count.countedPartialOz > 0 
+                              ? ` + ${count.countedPartialOz.toFixed(1)} oz partial` 
+                              : ""}
+                          </p>
+                        </div>
+                        <div className="text-right text-[#D4AF37] font-medium text-lg">
+                          {totalUnits.toFixed(1)}
+                        </div>
+                      </div>
+                    </CardContent>
+                  </Card>
+                );
+              })
+            )}
+
+            <div className="fixed bottom-0 left-0 right-0 p-4 bg-[#051a11] border-t border-[#1A4D2E]">
+              <Button
+                onClick={() => setLocation(`/inventory?zone=${viewSessionData.session.zoneId}`)}
+                className="w-full h-14 bg-[#1A4D2E] text-[#D4AF37] border-2 border-[#D4AF37] text-lg font-semibold"
+                data-testid="button-start-new-count"
+              >
+                Start New Count for This Zone
               </Button>
             </div>
           </div>
