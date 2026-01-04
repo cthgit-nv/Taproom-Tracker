@@ -47,6 +47,8 @@ export const products = pgTable("products", {
   pricePerUnit: decimal("price_per_unit", { precision: 10, scale: 2 }),
   isSoldByVolume: boolean("is_sold_by_volume").default(false),
   bottleSizeMl: integer("bottle_size_ml"),
+  emptyWeightGrams: integer("empty_weight_grams"),
+  fullWeightGrams: integer("full_weight_grams"),
   untappdId: integer("untappd_id"),
   untappdContainerId: text("untappd_container_id"),
   abv: real("abv"),
@@ -105,6 +107,8 @@ export const inventoryCounts = pgTable("inventory_counts", {
   expectedCount: real("expected_count"),
   countedBottles: real("counted_bottles").notNull().default(0),
   countedPartialOz: real("counted_partial_oz"),
+  isManualEstimate: boolean("is_manual_estimate").default(true),
+  scaleWeightGrams: integer("scale_weight_grams"),
   countedAt: timestamp("counted_at").notNull().defaultNow(),
 });
 

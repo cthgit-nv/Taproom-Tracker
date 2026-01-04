@@ -7,6 +7,14 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Slider } from "@/components/ui/slider";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import { 
   ArrowLeft, 
   Camera, 
@@ -19,7 +27,9 @@ import {
   Bluetooth,
   BluetoothConnected,
   WifiOff,
-  Wifi
+  Wifi,
+  Settings,
+  Zap
 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import type { Zone, Product, InventorySession } from "@shared/schema";
@@ -31,6 +41,8 @@ interface CountData {
   countedBottles: number;
   countedPartialOz: number | null;
   totalUnits: number;
+  isManualEstimate: boolean;
+  scaleWeightGrams: number | null;
 }
 
 interface OfflineCount {
@@ -39,6 +51,7 @@ interface OfflineCount {
   countedBottles: number;
   partialPercent: number;
   totalUnits: number;
+  isManualEstimate: boolean;
   timestamp: number;
 }
 
@@ -57,6 +70,15 @@ export default function InventorySessionPage() {
   const [scaleConnected, setScaleConnected] = useState(false);
   const [scaleConnecting, setScaleConnecting] = useState(false);
   const [scaleWeight, setScaleWeight] = useState<number | null>(null);
+  const [isManualEstimate, setIsManualEstimate] = useState(true);
+  
+  // Quick scan mode - goes directly to scan after save
+  const [quickScanMode, setQuickScanMode] = useState(true);
+  
+  // Empty weight editor
+  const [showWeightEditor, setShowWeightEditor] = useState(false);
+  const [editEmptyWeight, setEditEmptyWeight] = useState("");
+  const [editFullWeight, setEditFullWeight] = useState("");
   
   // Offline mode
   const [isOffline, setIsOffline] = useState(!navigator.onLine);
@@ -149,6 +171,7 @@ export default function InventorySessionPage() {
           productId: count.productId,
           countedBottles: count.countedBottles,
           countedPartialOz: partialOz,
+          isManualEstimate: count.isManualEstimate,
         });
       } catch (e) {
         console.error("Failed to sync count:", e);
@@ -175,7 +198,6 @@ export default function InventorySessionPage() {
       });
       const data = await res.json();
       
-      // If there's an existing session, treat it as success
       if (data.session) {
         return data.session;
       }
@@ -187,7 +209,7 @@ export default function InventorySessionPage() {
     onSuccess: (session: InventorySession) => {
       setActiveSession(session);
       setSelectedZone(session.zoneId);
-      setMode("list");
+      setMode(quickScanMode ? "scan" : "list");
       
       toast({
         title: "Session Active",
@@ -204,12 +226,37 @@ export default function InventorySessionPage() {
   });
 
   const saveCountMutation = useMutation({
-    mutationFn: async (data: { sessionId: number; productId: number; countedBottles: number; countedPartialOz: number | null }) => {
+    mutationFn: async (data: { 
+      sessionId: number; 
+      productId: number; 
+      countedBottles: number; 
+      countedPartialOz: number | null;
+      isManualEstimate: boolean;
+      scaleWeightGrams: number | null;
+    }) => {
       const res = await apiRequest("POST", "/api/inventory/counts", data);
       return res.json();
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/products"] });
+    },
+  });
+
+  const updateProductWeightMutation = useMutation({
+    mutationFn: async (data: { productId: number; emptyWeightGrams: number; fullWeightGrams: number }) => {
+      const res = await apiRequest("PATCH", `/api/products/${data.productId}`, {
+        emptyWeightGrams: data.emptyWeightGrams,
+        fullWeightGrams: data.fullWeightGrams,
+      });
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/products"] });
+      setShowWeightEditor(false);
+      toast({
+        title: "Weight Updated",
+        description: "Empty and full weights saved",
+      });
     },
   });
 
@@ -225,10 +272,7 @@ export default function InventorySessionPage() {
 
   const handleConnectScale = async () => {
     setScaleConnecting(true);
-    
-    // Simulate Bluetooth connection delay
     await new Promise(resolve => setTimeout(resolve, 1500));
-    
     setScaleConnected(true);
     setScaleConnecting(false);
     
@@ -249,7 +293,15 @@ export default function InventorySessionPage() {
     setFullBottles(0);
     setPartialPercent([0]);
     setScaleWeight(null);
+    setIsManualEstimate(true);
+    setEditEmptyWeight(product.emptyWeightGrams?.toString() || "");
+    setEditFullWeight(product.fullWeightGrams?.toString() || "");
     setMode("input");
+    
+    // Auto-weigh if scale connected
+    if (scaleConnected) {
+      setTimeout(() => simulateScaleReading(product), 500);
+    }
   };
 
   const handleSaveCount = () => {
@@ -264,18 +316,20 @@ export default function InventorySessionPage() {
       countedBottles: fullBottles,
       countedPartialOz: partialOz,
       totalUnits: totalUnits,
+      isManualEstimate: isManualEstimate,
+      scaleWeightGrams: scaleWeight,
     };
     
     setCounts(new Map(counts.set(currentProduct.id, countData)));
     
     if (isOffline) {
-      // Save offline
       const offlineCount: OfflineCount = {
         productId: currentProduct.id,
         productName: currentProduct.name,
         countedBottles: fullBottles,
         partialPercent: partialPercent[0],
         totalUnits: totalUnits,
+        isManualEstimate: isManualEstimate,
         timestamp: Date.now(),
       };
       const newOfflineCounts = [...offlineCounts, offlineCount];
@@ -292,11 +346,19 @@ export default function InventorySessionPage() {
         productId: currentProduct.id,
         countedBottles: fullBottles,
         countedPartialOz: partialOz,
+        isManualEstimate: isManualEstimate,
+        scaleWeightGrams: scaleWeight,
       });
     }
     
     setCurrentProduct(null);
-    setMode("list");
+    
+    // Quick scan mode: go directly to scan, otherwise list
+    if (quickScanMode) {
+      setMode("scan");
+    } else {
+      setMode("list");
+    }
   };
 
   const handleFinishSession = () => {
@@ -304,7 +366,6 @@ export default function InventorySessionPage() {
   };
 
   const handleSubmitSession = async () => {
-    // Sync any remaining offline counts first
     if (offlineCounts.length > 0 && !isOffline) {
       await syncOfflineCounts();
     }
@@ -314,14 +375,45 @@ export default function InventorySessionPage() {
     }
   };
 
-  const simulateScaleReading = () => {
+  const handleSaveWeights = () => {
+    if (!currentProduct) return;
+    
+    updateProductWeightMutation.mutate({
+      productId: currentProduct.id,
+      emptyWeightGrams: parseInt(editEmptyWeight) || 0,
+      fullWeightGrams: parseInt(editFullWeight) || 0,
+    });
+  };
+
+  const simulateScaleReading = (product?: Product) => {
     if (!scaleConnected) return;
+    
+    const targetProduct = product || currentProduct;
+    if (!targetProduct) return;
     
     const weight = Math.floor(Math.random() * 700) + 100;
     setScaleWeight(weight);
-    const bottleWeightGrams = (currentProduct?.bottleSizeMl || 750) * 1;
-    const percentFull = Math.min(100, Math.round((weight / bottleWeightGrams) * 100));
+    setIsManualEstimate(false);
+    
+    // Calculate percentage based on empty/full weights if available
+    const emptyWeight = targetProduct.emptyWeightGrams || 200;
+    const fullWeight = targetProduct.fullWeightGrams || (targetProduct.bottleSizeMl || 750) + 200;
+    const liquidWeight = fullWeight - emptyWeight;
+    const currentLiquid = Math.max(0, weight - emptyWeight);
+    const percentFull = Math.min(100, Math.round((currentLiquid / liquidWeight) * 100));
+    
     setPartialPercent([percentFull]);
+    
+    toast({
+      title: `${weight}g`,
+      description: `${percentFull}% full (scale reading)`,
+    });
+  };
+
+  const handleManualSliderChange = (value: number[]) => {
+    setPartialPercent(value);
+    setIsManualEstimate(true);
+    setScaleWeight(null);
   };
 
   if (authLoading) {
@@ -342,7 +434,7 @@ export default function InventorySessionPage() {
             size="icon"
             onClick={() => {
               if (mode === "input") {
-                setMode("list");
+                setMode(quickScanMode ? "scan" : "list");
                 setCurrentProduct(null);
               } else if (mode === "list" || mode === "scan") {
                 setMode("setup");
@@ -361,7 +453,7 @@ export default function InventorySessionPage() {
             <h1 className="text-lg font-semibold text-white">
               {mode === "setup" && "Start Count"}
               {mode === "list" && "Select Item"}
-              {mode === "scan" && "Scan Mode"}
+              {mode === "scan" && "Quick Scan"}
               {mode === "input" && "Count Item"}
               {mode === "review" && "Review Session"}
             </h1>
@@ -374,6 +466,12 @@ export default function InventorySessionPage() {
           
           {/* Status indicators */}
           <div className="flex items-center gap-2">
+            {quickScanMode && mode !== "setup" && (
+              <Badge variant="outline" className="border-[#D4AF37] text-[#D4AF37]">
+                <Zap className="w-3 h-3 mr-1" />
+                Quick
+              </Badge>
+            )}
             {isOffline ? (
               <Badge variant="outline" className="border-orange-500 text-orange-400">
                 <WifiOff className="w-3 h-3 mr-1" />
@@ -382,7 +480,6 @@ export default function InventorySessionPage() {
             ) : (
               <Wifi className="w-4 h-4 text-green-400" />
             )}
-            
             {scaleConnected && (
               <BluetoothConnected className="w-4 h-4 text-blue-400" />
             )}
@@ -394,7 +491,36 @@ export default function InventorySessionPage() {
         {/* SETUP MODE */}
         {mode === "setup" && (
           <div className="space-y-6">
-            {/* Scale Connection - Connect once at session start */}
+            {/* Quick Scan Toggle */}
+            <Card className="bg-[#0a2419] border-2 border-[#1A4D2E]">
+              <CardContent className="p-4">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-3">
+                    <Zap className={`w-6 h-6 ${quickScanMode ? "text-[#D4AF37]" : "text-white/40"}`} />
+                    <div>
+                      <p className="font-medium text-white">Quick Scan Mode</p>
+                      <p className="text-sm text-white/60">
+                        Auto-open camera after each save
+                      </p>
+                    </div>
+                  </div>
+                  <Button
+                    variant={quickScanMode ? "default" : "outline"}
+                    size="sm"
+                    onClick={() => setQuickScanMode(!quickScanMode)}
+                    className={quickScanMode 
+                      ? "bg-[#D4AF37] text-[#051a11]" 
+                      : "border-[#1A4D2E] text-white/60"
+                    }
+                    data-testid="toggle-quick-scan"
+                  >
+                    {quickScanMode ? "ON" : "OFF"}
+                  </Button>
+                </div>
+              </CardContent>
+            </Card>
+
+            {/* Scale Connection */}
             <Card className="bg-[#0a2419] border-2 border-[#1A4D2E]">
               <CardContent className="p-4">
                 <div className="flex items-center justify-between">
@@ -407,7 +533,7 @@ export default function InventorySessionPage() {
                     <div>
                       <p className="font-medium text-white">Bluetooth Scale</p>
                       <p className="text-sm text-white/60">
-                        {scaleConnected ? "Connected for session" : "Optional - for partial bottles"}
+                        {scaleConnected ? "Connected - auto-weighs on scan" : "For partial bottles"}
                       </p>
                     </div>
                   </div>
@@ -422,7 +548,7 @@ export default function InventorySessionPage() {
                     }
                     data-testid="button-connect-scale"
                   >
-                    {scaleConnecting ? "Connecting..." : scaleConnected ? "Connected" : "Connect"}
+                    {scaleConnecting ? "..." : scaleConnected ? "Connected" : "Connect"}
                   </Button>
                 </div>
               </CardContent>
@@ -455,7 +581,6 @@ export default function InventorySessionPage() {
               </div>
             </div>
 
-            {/* Offline indicator */}
             {isOffline && (
               <Card className="bg-orange-500/10 border-2 border-orange-500/50">
                 <CardContent className="p-4 flex items-center gap-3">
@@ -476,7 +601,7 @@ export default function InventorySessionPage() {
               className="w-full h-14 bg-[#1A4D2E] text-[#D4AF37] border-2 border-[#D4AF37] text-lg font-semibold"
               data-testid="button-start-count"
             >
-              {startSessionMutation.isPending ? "Starting..." : "Start Count"}
+              {startSessionMutation.isPending ? "Starting..." : quickScanMode ? "Start Quick Scan" : "Start Count"}
             </Button>
           </div>
         )}
@@ -542,8 +667,14 @@ export default function InventorySessionPage() {
                       </div>
                       {counted && countData && (
                         <div className="flex items-center gap-2">
-                          <Badge variant="outline" className="border-green-500 text-green-400">
+                          <Badge variant="outline" className={`
+                            ${countData.isManualEstimate 
+                              ? "border-orange-400 text-orange-400" 
+                              : "border-blue-400 text-blue-400"
+                            }
+                          `}>
                             {countData.totalUnits.toFixed(1)}
+                            {countData.isManualEstimate ? "" : " (S)"}
                           </Badge>
                           <div className="w-6 h-6 rounded-full bg-green-500/20 flex items-center justify-center">
                             <Check className="w-3 h-3 text-green-400" />
@@ -601,32 +732,37 @@ export default function InventorySessionPage() {
               </Card>
             )}
 
-            <Card className="bg-[#0a2419] border-2 border-[#1A4D2E] overflow-hidden">
+            <Card className="bg-[#0a2419] border-2 border-[#D4AF37] overflow-hidden">
               <CardContent className="p-0">
-                <div className="aspect-[4/3] bg-black flex items-center justify-center">
-                  <div className="text-center text-white/60">
-                    <Camera className="w-16 h-16 mx-auto mb-2" />
-                    <p>Camera Preview</p>
-                    <p className="text-sm">(Works offline with cached products)</p>
+                <div className="aspect-[4/3] bg-black flex items-center justify-center relative">
+                  <div className="absolute inset-0 border-4 border-[#D4AF37]/30 m-8 rounded-lg" />
+                  <div className="text-center text-white/60 z-10">
+                    <Camera className="w-16 h-16 mx-auto mb-2 text-[#D4AF37]" />
+                    <p className="text-[#D4AF37] font-medium">Camera Active</p>
+                    <p className="text-sm">Scan barcode to count</p>
                   </div>
                 </div>
               </CardContent>
             </Card>
 
-            <p className="text-center text-white/60 text-sm">
-              Point camera at barcode to scan
-            </p>
+            {scaleConnected && (
+              <p className="text-center text-blue-400 text-sm flex items-center justify-center gap-2">
+                <BluetoothConnected className="w-4 h-4" />
+                Scale will auto-weigh on scan
+              </p>
+            )}
 
             {/* Simulation buttons */}
             <div className="grid grid-cols-2 gap-2">
-              {displayProducts.slice(0, 4).map((product) => (
+              {displayProducts.slice(0, 6).map((product) => (
                 <Button
                   key={product.id}
                   variant="outline"
                   onClick={() => handleSelectProduct(product)}
-                  className="text-sm border-[#1A4D2E] text-white/80"
+                  className="text-sm border-[#1A4D2E] text-white/80 justify-start"
+                  data-testid={`scan-${product.id}`}
                 >
-                  Scan: {product.name.substring(0, 15)}
+                  {product.name.substring(0, 15)}
                 </Button>
               ))}
             </div>
@@ -645,7 +781,7 @@ export default function InventorySessionPage() {
 
         {/* INPUT MODE */}
         {mode === "input" && currentProduct && (
-          <div className="space-y-4 pb-32">
+          <div className="space-y-4 pb-36">
             {/* Product Card */}
             <Card className="bg-[#0a2419] border-2 border-[#1A4D2E]">
               <CardContent className="p-4 flex items-center gap-4">
@@ -653,28 +789,34 @@ export default function InventorySessionPage() {
                   <img 
                     src={currentProduct.labelImageUrl} 
                     alt={currentProduct.name}
-                    className="w-16 h-16 rounded-lg object-cover"
+                    className="w-14 h-14 rounded-lg object-cover"
                   />
                 ) : (
-                  <div className="w-16 h-16 rounded-lg bg-[#1A4D2E] flex items-center justify-center">
-                    <span className="text-[#D4AF37] text-2xl font-bold">
+                  <div className="w-14 h-14 rounded-lg bg-[#1A4D2E] flex items-center justify-center">
+                    <span className="text-[#D4AF37] text-xl font-bold">
                       {currentProduct.name.charAt(0)}
                     </span>
                   </div>
                 )}
-                <div>
-                  <p className="font-semibold text-white text-lg">{currentProduct.name}</p>
+                <div className="flex-1">
+                  <p className="font-semibold text-white">{currentProduct.name}</p>
                   <p className="text-sm text-white/60">
                     {currentProduct.bottleSizeMl}ml - {currentProduct.style}
                   </p>
-                  <p className="text-xs text-[#D4AF37]">
-                    Expected: {currentProduct.currentCountBottles?.toFixed(1) || 0}
-                  </p>
                 </div>
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  onClick={() => setShowWeightEditor(true)}
+                  className="text-white/40"
+                  data-testid="button-edit-weights"
+                >
+                  <Settings className="w-5 h-5" />
+                </Button>
               </CardContent>
             </Card>
 
-            {/* Partial Bottle - with optional scale */}
+            {/* Partial Bottle with Scale */}
             <Card className="bg-[#0a2419] border-2 border-[#1A4D2E]">
               <CardContent className="p-4">
                 <div className="flex items-center justify-between mb-4">
@@ -682,35 +824,44 @@ export default function InventorySessionPage() {
                     <Scale className="w-5 h-5 text-[#D4AF37]" />
                     <span className="text-white font-medium">Open/Partial Bottle</span>
                   </div>
-                  {scaleConnected ? (
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      onClick={simulateScaleReading}
-                      className="border-blue-400 text-blue-400"
-                      data-testid="button-weigh"
-                    >
-                      <BluetoothConnected className="w-4 h-4 mr-1" />
-                      {scaleWeight !== null ? `${scaleWeight}g` : "Weigh"}
-                    </Button>
-                  ) : (
-                    <Badge variant="outline" className="border-white/20 text-white/40">
-                      <Bluetooth className="w-3 h-3 mr-1" />
-                      No scale
-                    </Badge>
-                  )}
+                  <div className="flex items-center gap-2">
+                    {!isManualEstimate && scaleWeight && (
+                      <Badge variant="outline" className="border-blue-400 text-blue-400">
+                        {scaleWeight}g (Scale)
+                      </Badge>
+                    )}
+                    {isManualEstimate && partialPercent[0] > 0 && (
+                      <Badge variant="outline" className="border-orange-400 text-orange-400">
+                        Manual
+                      </Badge>
+                    )}
+                    {scaleConnected && (
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => simulateScaleReading()}
+                        className="border-blue-400 text-blue-400"
+                        data-testid="button-weigh"
+                      >
+                        <BluetoothConnected className="w-4 h-4 mr-1" />
+                        Weigh
+                      </Button>
+                    )}
+                  </div>
                 </div>
                 
                 <div className="space-y-4">
                   <div>
                     <div className="flex justify-between text-sm text-white/60 mb-2">
-                      <span>Empty (0%)</span>
-                      <span className="text-[#D4AF37] font-medium">{partialPercent[0]}%</span>
-                      <span>Full (100%)</span>
+                      <span>Empty</span>
+                      <span className={`font-medium ${isManualEstimate ? "text-orange-400" : "text-blue-400"}`}>
+                        {partialPercent[0]}%
+                      </span>
+                      <span>Full</span>
                     </div>
                     <Slider
                       value={partialPercent}
-                      onValueChange={setPartialPercent}
+                      onValueChange={handleManualSliderChange}
                       max={100}
                       step={5}
                       className="w-full"
@@ -762,13 +913,20 @@ export default function InventorySessionPage() {
               {/* Total Units Display */}
               <div className="px-4 py-3 border-b border-[#1A4D2E]/50">
                 <div className="flex items-center justify-between">
-                  <span className="text-white/60">Total Units</span>
+                  <div className="flex items-center gap-2">
+                    <span className="text-white/60">Total</span>
+                    {!isManualEstimate && (
+                      <Badge variant="outline" className="border-blue-400 text-blue-400 text-xs">
+                        Scale
+                      </Badge>
+                    )}
+                  </div>
                   <div className="flex items-baseline gap-1">
                     <span className="text-3xl font-bold text-[#D4AF37]" data-testid="text-total-units">
                       {totalUnits.toFixed(1)}
                     </span>
                     <span className="text-white/40 text-sm">
-                      ({fullBottles} full + {(partialPercent[0] / 100).toFixed(1)} partial)
+                      ({fullBottles} + {(partialPercent[0] / 100).toFixed(1)})
                     </span>
                   </div>
                 </div>
@@ -782,7 +940,12 @@ export default function InventorySessionPage() {
                   className="w-full h-14 bg-[#1A4D2E] text-[#D4AF37] border-2 border-[#D4AF37] text-lg font-semibold"
                   data-testid="button-save-next"
                 >
-                  {saveCountMutation.isPending ? "Saving..." : isOffline ? "Save Offline & Next" : "Save & Scan Next"}
+                  {saveCountMutation.isPending ? "Saving..." : (
+                    <>
+                      Save & {quickScanMode ? "Scan Next" : "Continue"}
+                      {quickScanMode && <Camera className="w-5 h-5 ml-2" />}
+                    </>
+                  )}
                 </Button>
               </div>
             </div>
@@ -819,8 +982,17 @@ export default function InventorySessionPage() {
                 >
                   <CardContent className="p-4">
                     <div className="flex items-center justify-between">
-                      <div>
-                        <p className="font-medium text-white">{product.name}</p>
+                      <div className="flex-1">
+                        <div className="flex items-center gap-2">
+                          <p className="font-medium text-white">{product.name}</p>
+                          <Badge variant="outline" className={`text-xs ${
+                            count.isManualEstimate 
+                              ? "border-orange-400 text-orange-400" 
+                              : "border-blue-400 text-blue-400"
+                          }`}>
+                            {count.isManualEstimate ? "Manual" : "Scale"}
+                          </Badge>
+                        </div>
                         <p className="text-sm text-white/60">
                           Expected: {expected.toFixed(1)} | Counted: {count.totalUnits.toFixed(1)}
                         </p>
@@ -850,6 +1022,50 @@ export default function InventorySessionPage() {
           </div>
         )}
       </main>
+
+      {/* Weight Editor Dialog */}
+      <Dialog open={showWeightEditor} onOpenChange={setShowWeightEditor}>
+        <DialogContent className="bg-[#0a2419] border-[#1A4D2E] text-white">
+          <DialogHeader>
+            <DialogTitle>Edit Bottle Weights</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4 py-4">
+            <p className="text-sm text-white/60">
+              Set empty and full weights for more accurate scale readings.
+            </p>
+            <div className="space-y-2">
+              <Label className="text-white">Empty Weight (grams)</Label>
+              <Input
+                type="number"
+                value={editEmptyWeight}
+                onChange={(e) => setEditEmptyWeight(e.target.value)}
+                placeholder="e.g., 200"
+                className="bg-[#051a11] border-[#1A4D2E] text-white"
+                data-testid="input-empty-weight"
+              />
+            </div>
+            <div className="space-y-2">
+              <Label className="text-white">Full Weight (grams)</Label>
+              <Input
+                type="number"
+                value={editFullWeight}
+                onChange={(e) => setEditFullWeight(e.target.value)}
+                placeholder="e.g., 950"
+                className="bg-[#051a11] border-[#1A4D2E] text-white"
+                data-testid="input-full-weight"
+              />
+            </div>
+            <Button
+              onClick={handleSaveWeights}
+              disabled={updateProductWeightMutation.isPending}
+              className="w-full bg-[#1A4D2E] text-[#D4AF37] border border-[#D4AF37]"
+              data-testid="button-save-weights"
+            >
+              {updateProductWeightMutation.isPending ? "Saving..." : "Save Weights"}
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

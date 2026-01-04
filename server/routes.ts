@@ -406,6 +406,25 @@ export async function registerRoutes(
     }
   });
 
+  // Update product (for weights, etc.)
+  app.patch("/api/products/:id", async (req: Request, res: Response) => {
+    try {
+      const productId = parseInt(req.params.id);
+      const { emptyWeightGrams, fullWeightGrams, ...otherFields } = req.body;
+      
+      const product = await storage.updateProduct(productId, {
+        emptyWeightGrams,
+        fullWeightGrams,
+        ...otherFields,
+      });
+      
+      return res.json(product);
+    } catch (error) {
+      console.error("Update product error:", error);
+      return res.status(500).json({ error: "Internal server error" });
+    }
+  });
+
   return httpServer;
 }
 
