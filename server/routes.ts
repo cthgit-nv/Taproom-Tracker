@@ -493,12 +493,21 @@ export async function registerRoutes(
   });
 
   // ========================
-  // GoTab Sales Integration Routes
+  // GoTab Sales Integration Routes (Admin/Owner Only)
   // ========================
   
   // Sync daily sales from GoTab (read-only integration)
   app.post("/api/gotab/sync", async (req: Request, res: Response) => {
     try {
+      if (!req.session.userId) {
+        return res.status(401).json({ error: "Not authenticated" });
+      }
+      
+      const currentUser = await storage.getUser(req.session.userId);
+      if (!currentUser || !["admin", "owner"].includes(currentUser.role)) {
+        return res.status(403).json({ error: "Admin access required" });
+      }
+      
       const settings = await storage.getSettings();
       
       if (!settings?.gotabLocId || !settings?.gotabKey || !settings?.gotabSecret) {
@@ -536,6 +545,15 @@ export async function registerRoutes(
   // Get daily sales from GoTab
   app.post("/api/gotab/daily-sales", async (req: Request, res: Response) => {
     try {
+      if (!req.session.userId) {
+        return res.status(401).json({ error: "Not authenticated" });
+      }
+      
+      const currentUser = await storage.getUser(req.session.userId);
+      if (!currentUser || !["admin", "owner"].includes(currentUser.role)) {
+        return res.status(403).json({ error: "Admin access required" });
+      }
+      
       const { date } = req.body;
       const settings = await storage.getSettings();
       

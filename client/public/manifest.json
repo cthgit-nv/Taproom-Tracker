@@ -1,0 +1,12 @@
+{
+  "name": "Well Stocked",
+  "short_name": "Well Stocked",
+  "description": "Taproom Inventory Management System",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#051a11",
+  "theme_color": "#051a11",
+  "orientation": "portrait-primary",
+  "categories": ["business", "productivity"],
+  "prefer_related_applications": false
+}

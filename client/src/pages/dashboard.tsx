@@ -17,7 +17,8 @@ import {
   Truck,
   Star,
   Sparkles,
-  Dog
+  Dog,
+  Users
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -295,8 +296,33 @@ export default function DashboardPage() {
           </div>
         </section>
 
-        {/* Stars vs Dogs Matrix - Admin Only */}
-        {user.role === "admin" && kegProducts.length > 0 && (
+        {/* Owner-Only: Team Management Link */}
+        {user.role === "owner" && (
+          <section>
+            <h2 className="text-lg font-semibold text-white mb-4">Admin</h2>
+            <div className="grid gap-3">
+              <Link href="/admin/team">
+                <Card 
+                  className="bg-[#0a2419] border-2 border-[#D4AF37]/30 hover-elevate active-elevate-2 cursor-pointer overflow-visible"
+                  data-testid="card-team-management"
+                >
+                  <CardContent className="p-4 flex items-center gap-4">
+                    <div className="w-12 h-12 rounded-lg bg-[#D4AF37]/10 flex items-center justify-center">
+                      <Users className="w-6 h-6 text-[#D4AF37]" />
+                    </div>
+                    <div className="flex-1">
+                      <p className="font-medium text-white">Team Management</p>
+                      <p className="text-sm text-white/60">Add users, reset PINs, set roles</p>
+                    </div>
+                  </CardContent>
+                </Card>
+              </Link>
+            </div>
+          </section>
+        )}
+
+        {/* Stars vs Dogs Matrix - Admin and Owner */}
+        {(user.role === "admin" || user.role === "owner") && kegProducts.length > 0 && (
           <section>
             <h2 className="text-lg font-semibold text-white mb-4 flex items-center gap-2">
               <Star className="w-5 h-5 text-[#D4AF37]" />
