@@ -61,13 +61,16 @@ export const products = pgTable("products", {
   currentCountBottles: real("current_count_bottles").default(0),
   parLevel: integer("par_level"),
   historicalVelocity: real("historical_velocity"),
+  backupKegCount: integer("backup_keg_count").default(0),
 });
 
 // Kegs table - individual keg tracking
+// Status: on_deck = Back Inventory (full kegs waiting), tapped = linked to PMB/tap, kicked = empty
 export const kegs = pgTable("kegs", {
   id: integer("id").primaryKey().generatedAlwaysAsIdentity(),
   productId: integer("product_id").references(() => products.id).notNull(),
   status: text("status", { enum: ["on_deck", "tapped", "kicked"] }).notNull().default("on_deck"),
+  tapNumber: integer("tap_number"),
   initialVolOz: real("initial_vol_oz"),
   remainingVolOz: real("remaining_vol_oz"),
   dateReceived: timestamp("date_received"),
