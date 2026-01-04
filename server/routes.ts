@@ -5,6 +5,7 @@ import { storage } from "./storage";
 import { pinLoginSchema, insertProductSchema } from "@shared/schema";
 import { z } from "zod";
 import { fetchDailySales, fetchProductCatalog, isGoTabConfigured, type GoTabSalesResult, type GoTabProduct } from "./gotab";
+import { isUntappdConfigured, previewTapList, fetchFullTapList, type UntappdMenuItem } from "./untappd";
 
 // Extend express-session types
 declare module "express-session" {
@@ -906,6 +907,157 @@ export async function registerRoutes(
     } catch (error) {
       console.error("Update settings error:", error);
       return res.status(500).json({ error: "Internal server error" });
+    }
+  });
+
+  // ========================
+  // Untappd Integration Routes (Admin/Owner Only)
+  // ========================
+  
+  // Check Untappd configuration status
+  app.get("/api/untappd/status", async (req: Request, res: Response) => {
+    try {
+      if (!req.session.userId) {
+        return res.status(401).json({ error: "Not authenticated" });
+      }
+      
+      const currentUser = await storage.getUser(req.session.userId);
+      if (!currentUser || !["admin", "owner"].includes(currentUser.role)) {
+        return res.status(403).json({ error: "Admin access required" });
+      }
+      
+      return res.json({ 
+        configured: isUntappdConfigured(),
+        message: isUntappdConfigured() ? "Untappd is configured" : "Untappd credentials not set"
+      });
+    } catch (error) {
+      console.error("Untappd status error:", error);
+      return res.status(500).json({ error: "Internal server error" });
+    }
+  });
+
+  // Preview tap list from Untappd (read-only)
+  app.get("/api/untappd/taplist/preview", async (req: Request, res: Response) => {
+    try {
+      if (!req.session.userId) {
+        return res.status(401).json({ error: "Not authenticated" });
+      }
+      
+      const currentUser = await storage.getUser(req.session.userId);
+      if (!currentUser || !["admin", "owner"].includes(currentUser.role)) {
+        return res.status(403).json({ error: "Admin access required" });
+      }
+      
+      if (!isUntappdConfigured()) {
+        return res.status(400).json({ error: "Untappd not configured. Set UNTAPPD_EMAIL, UNTAPPD_API_TOKEN, and UNTAPPD_LOCATION_ID." });
+      }
+      
+      const tapList = await previewTapList();
+      return res.json(tapList);
+    } catch (error) {
+      console.error("Untappd preview error:", error);
+      const message = error instanceof Error ? error.message : "Internal server error";
+      return res.status(500).json({ error: message });
+    }
+  });
+
+  // Sync tap list from Untappd - creates new products for new beers
+  app.post("/api/untappd/sync", async (req: Request, res: Response) => {
+    try {
+      if (!req.session.userId) {
+        return res.status(401).json({ error: "Not authenticated" });
+      }
+      
+      const currentUser = await storage.getUser(req.session.userId);
+      if (!currentUser || !["admin", "owner"].includes(currentUser.role)) {
+        return res.status(403).json({ error: "Admin access required" });
+      }
+      
+      if (!isUntappdConfigured()) {
+        return res.status(400).json({ error: "Untappd not configured" });
+      }
+      
+      const tapListItems = await fetchFullTapList();
+      const existingProducts = await storage.getAllProducts();
+      
+      let newBeers: Array<{ name: string; brewery: string | null; style: string | null }> = [];
+      let existingCount = 0;
+      let updated = 0;
+      const errors: string[] = [];
+      
+      for (const item of tapListItems) {
+        try {
+          // Skip items without a name
+          if (!item.name || item.name.trim() === "") {
+            errors.push(`Skipped item with no name (ID: ${item.id})`);
+            continue;
+          }
+          
+          // Try to find existing product by Untappd ID or name
+          const existingByUntappdId = item.untappd_id 
+            ? existingProducts.find(p => p.untappdId === item.untappd_id)
+            : null;
+          const existingByName = existingProducts.find(p => 
+            p.name.toLowerCase() === item.name.toLowerCase()
+          );
+          
+          const existing = existingByUntappdId || existingByName;
+          
+          if (existing) {
+            existingCount++;
+            
+            // Update existing product with Untappd data
+            await storage.updateProduct(existing.id, {
+              untappdId: item.untappd_id ?? undefined,
+              untappdContainerId: item.container_id?.toString() ?? undefined,
+              abv: item.abv ?? undefined,
+              ibu: item.ibu ?? undefined,
+              style: item.style ?? undefined,
+              description: item.description ?? undefined,
+              labelImageUrl: item.label_image_hd || item.label_image || undefined,
+              untappdRating: item.rating ?? undefined,
+              untappdRatingCount: item.rating_count ?? undefined,
+            });
+            updated++;
+          } else {
+            // Create new product from Untappd
+            await storage.createProduct({
+              name: item.name.trim(),
+              untappdId: item.untappd_id ?? undefined,
+              untappdContainerId: item.container_id?.toString() ?? undefined,
+              abv: item.abv ?? undefined,
+              ibu: item.ibu ?? undefined,
+              style: item.style ?? undefined,
+              description: item.description ?? undefined,
+              labelImageUrl: item.label_image_hd || item.label_image || undefined,
+              isSoldByVolume: true, // Draft beers are sold by volume
+              untappdRating: item.rating ?? undefined,
+              untappdRatingCount: item.rating_count ?? undefined,
+            });
+            
+            newBeers.push({
+              name: item.name,
+              brewery: item.brewery,
+              style: item.style,
+            });
+          }
+        } catch (err) {
+          errors.push(`Failed to sync ${item.name}: ${err instanceof Error ? err.message : 'Unknown error'}`);
+        }
+      }
+      
+      return res.json({
+        totalOnTap: tapListItems.length,
+        newBeers,
+        existingBeers: existingCount,
+        updated,
+        errors,
+        message: `Synced ${tapListItems.length} beers: ${newBeers.length} new, ${existingCount} existing (${updated} updated)${errors.length > 0 ? `, ${errors.length} errors` : ''}`,
+      });
+    } catch (error) {
+      console.error("Untappd sync error:", error);
+      const message = error instanceof Error ? error.message : "Internal server error";
+      return res.status(500).json({ error: message });
     }
   });
 

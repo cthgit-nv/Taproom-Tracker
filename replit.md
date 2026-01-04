@@ -38,13 +38,24 @@ Preferred communication style: Simple, everyday language.
   - **Staff**: Day-to-day operations (inventory counts, receiving)
 
 ### External Integrations
+- **Untappd for Business**: Source of truth for tap list (PRIMARY)
+  - REST API with Basic Auth (email:token Base64 encoded)
+  - Auto-syncs tap list: creates new products for new beers, updates existing
+  - Brings in: beer name, style, ABV, IBU, description, ratings, label images
+  - Environment variables: UNTAPPD_EMAIL, UNTAPPD_API_TOKEN, UNTAPPD_LOCATION_ID
+  - Service: `server/untappd.ts`
 - **GoTab POS**: Read-only sales integration via GraphQL API
   - OAuth client credentials flow for authentication
   - Daily sales sync deducts bottles/cans from inventory
   - Draft beer revenue tracked (quantity from PMB sensors)
   - Environment variables: GOTAB_API_KEY, GOTAB_API_SECRET, GOTAB_LOCATION_UUID
+  - Service: `server/gotab.ts`
 - **PourMyBeer**: Planned integration for keg level sensors
-- **Untappd**: Product ratings and velocity data
+
+### Integration Workflow
+1. **Untappd** is source of truth for what's on tap - sync when beers change
+2. **GoTab** handles sales deductions - sync daily
+3. **PMB** (future) provides real-time keg levels for tapped kegs
 
 ### Project Structure
 ```

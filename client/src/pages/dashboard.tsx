@@ -18,7 +18,8 @@ import {
   Star,
   Sparkles,
   Dog,
-  Users
+  Users,
+  Link2
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -296,7 +297,7 @@ export default function DashboardPage() {
           </div>
         </section>
 
-        {/* Owner-Only: Team Management Link */}
+        {/* Owner-Only: Admin Section */}
         {user.role === "owner" && (
           <section>
             <h2 className="text-lg font-semibold text-white mb-4">Admin</h2>
@@ -313,6 +314,23 @@ export default function DashboardPage() {
                     <div className="flex-1">
                       <p className="font-medium text-white">Team Management</p>
                       <p className="text-sm text-white/60">Add users, reset PINs, set roles</p>
+                    </div>
+                  </CardContent>
+                </Card>
+              </Link>
+              
+              <Link href="/admin/integrations">
+                <Card 
+                  className="bg-[#0a2419] border-2 border-[#D4AF37]/30 hover-elevate active-elevate-2 cursor-pointer overflow-visible"
+                  data-testid="card-integrations"
+                >
+                  <CardContent className="p-4 flex items-center gap-4">
+                    <div className="w-12 h-12 rounded-lg bg-[#D4AF37]/10 flex items-center justify-center">
+                      <Link2 className="w-6 h-6 text-[#D4AF37]" />
+                    </div>
+                    <div className="flex-1">
+                      <p className="font-medium text-white">Integrations</p>
+                      <p className="text-sm text-white/60">Untappd, GoTab, PourMyBeer sync</p>
                     </div>
                   </CardContent>
                 </Card>

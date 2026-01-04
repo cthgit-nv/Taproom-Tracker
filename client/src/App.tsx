@@ -12,6 +12,7 @@ import InventoryDashboardPage from "@/pages/inventory-dashboard";
 import ReceivingPage from "@/pages/receiving";
 import SmartOrderPage from "@/pages/smart-order";
 import AdminTeamPage from "@/pages/admin-team";
+import AdminIntegrationsPage from "@/pages/admin-integrations";
 import NotFound from "@/pages/not-found";
 import type { Settings } from "@shared/schema";
 
@@ -39,6 +40,7 @@ function Router() {
       <Route path="/receiving" component={ReceivingPage} />
       <Route path="/smart-order" component={SmartOrderPage} />
       <Route path="/admin/team" component={AdminTeamPage} />
+      <Route path="/admin/integrations" component={AdminIntegrationsPage} />
       <Route component={NotFound} />
     </Switch>
   );
