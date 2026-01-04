@@ -167,12 +167,39 @@ export default function InventorySessionPage() {
 
   const startSessionMutation = useMutation({
     mutationFn: async (zoneId: number) => {
-      const res = await apiRequest("POST", "/api/inventory/sessions", { zoneId });
-      return res.json();
+      const res = await fetch("/api/inventory/sessions", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify({ zoneId }),
+      });
+      const data = await res.json();
+      
+      // If there's an existing session, treat it as success
+      if (data.session) {
+        return data.session;
+      }
+      if (!res.ok) {
+        throw new Error(data.error || "Failed to start session");
+      }
+      return data;
     },
     onSuccess: (session: InventorySession) => {
       setActiveSession(session);
+      setSelectedZone(session.zoneId);
       setMode("list");
+      
+      toast({
+        title: "Session Active",
+        description: `Counting in ${zones.find(z => z.id === session.zoneId)?.name || "zone"}`,
+      });
+    },
+    onError: (error: Error) => {
+      toast({
+        title: "Error",
+        description: error.message,
+        variant: "destructive",
+      });
     },
   });
 
