@@ -61,14 +61,19 @@ export async function lookupUpc(upc: string): Promise<BarcodeSpiderProduct | nul
     });
     
     if (response.status === 429) {
-      throw new Error("Rate limit exceeded. Please try again later.");
-    }
-    
-    if (!response.ok) {
-      throw new Error(`Barcode Spider API error: ${response.status}`);
+      throw new Error("RATE_LIMIT: Rate limit exceeded. Please try again later.");
     }
     
     const data: BarcodeSpiderResponse = await response.json();
+    
+    // Check for authentication errors
+    if (data.item_response.status === "AUTH_ERR" || response.status === 401) {
+      throw new Error("AUTH_EXPIRED: Barcode Spider API subscription expired or invalid token. Please renew your subscription.");
+    }
+    
+    if (!response.ok) {
+      throw new Error(`API_ERROR: Barcode Spider API error: ${response.status}`);
+    }
     
     // Check if product was found
     if (data.item_response.code !== 200 || !data.item_attributes) {

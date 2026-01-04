@@ -107,7 +107,7 @@ export default function ReceivingPage() {
   const [newProductUntappdId, setNewProductUntappdId] = useState<number | null>(null);
   const [newProductRating, setNewProductRating] = useState<number | null>(null);
   
-  // Manufacturer and beverage type from Barcode Spider
+  // Brand and beverage type from Barcode Spider
   const [newProductBrand, setNewProductBrand] = useState("");
   const [newProductBeverageType, setNewProductBeverageType] = useState<string>("beer");
 
@@ -283,10 +283,28 @@ export default function ReceivingPage() {
               });
             }
           } else {
-            toast({
-              title: "New Item",
-              description: "Please enter product details",
-            });
+            // Check for specific API errors
+            const errorData = await barcodeRes.json().catch(() => ({}));
+            const errorMsg = errorData?.error || "";
+            
+            if (errorMsg.includes("AUTH_EXPIRED") || errorMsg.includes("subscription")) {
+              toast({
+                title: "API Subscription Expired",
+                description: "Barcode Spider subscription needs renewal. Enter product details manually.",
+                variant: "destructive",
+              });
+            } else if (errorMsg.includes("RATE_LIMIT")) {
+              toast({
+                title: "Rate Limit",
+                description: "Too many lookups. Please wait and try again.",
+                variant: "destructive",
+              });
+            } else {
+              toast({
+                title: "New Item",
+                description: "Please enter product details",
+              });
+            }
           }
         } catch {
           toast({
