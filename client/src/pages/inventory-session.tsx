@@ -100,6 +100,9 @@ export default function InventorySessionPage() {
       isManualEstimate: boolean;
     }>;
   } | null>(null);
+  
+  // Auto-start zone from URL param
+  const [autoStartZone, setAutoStartZone] = useState<number | null>(null);
 
   // Calculate total units
   const totalUnits = fullBottles + (partialPercent[0] / 100);
@@ -174,10 +177,18 @@ export default function InventorySessionPage() {
     } else if (zoneParam) {
       const zoneId = parseInt(zoneParam);
       if (!isNaN(zoneId)) {
-        setSelectedZone(zoneId);
+        setAutoStartZone(zoneId);
       }
     }
   }, []);
+
+  // Auto-start session when zone param is provided
+  useEffect(() => {
+    if (autoStartZone && isAuthenticated && !authLoading && mode === "setup") {
+      startSessionMutation.mutate(autoStartZone);
+      setAutoStartZone(null); // Clear so we don't retry
+    }
+  }, [autoStartZone, isAuthenticated, authLoading, mode]);
 
   const { data: zones = [] } = useQuery<Zone[]>({
     queryKey: ["/api/zones"],
