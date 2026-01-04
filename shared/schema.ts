@@ -20,6 +20,8 @@ export const settings = pgTable("settings", {
   id: integer("id").primaryKey().generatedAlwaysAsIdentity(),
   pmbLocalIp: text("pmb_local_ip"),
   pmbLocalPort: integer("pmb_local_port"),
+  pmbUsername: text("pmb_username"),
+  pmbPassword: text("pmb_password"),
   simulationMode: boolean("simulation_mode").notNull().default(true),
   pluRangeStart: integer("plu_range_start").notNull().default(1000),
   pluRangeEnd: integer("plu_range_end").notNull().default(2000),
