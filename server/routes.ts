@@ -684,17 +684,6 @@ export async function registerRoutes(
     }
   });
 
-  // Create new product (for unknown UPCs)
-  app.post("/api/products", async (req: Request, res: Response) => {
-    try {
-      const product = await storage.createProduct(req.body);
-      return res.json(product);
-    } catch (error) {
-      console.error("Create product error:", error);
-      return res.status(500).json({ error: "Internal server error" });
-    }
-  });
-
   // Get single product
   app.get("/api/products/:id", async (req: Request, res: Response) => {
     try {

@@ -262,6 +262,7 @@ export default function SettingsPage() {
                       variant="ghost"
                       onClick={() => setShowAddDistributor(false)}
                       className="text-white/60"
+                      data-testid="button-cancel-distributor"
                     >
                       Cancel
                     </Button>
@@ -380,6 +381,7 @@ export default function SettingsPage() {
                       variant="ghost"
                       onClick={() => setEditingFormula(false)}
                       className="text-white/60"
+                      data-testid="button-cancel-formula"
                     >
                       Cancel
                     </Button>
