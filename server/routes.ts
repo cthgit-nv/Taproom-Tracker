@@ -372,11 +372,11 @@ export async function registerRoutes(
       } else {
         // For bottles: 
         // - countedPartialOz represents the partial/open bottle (stored as currentCountBottles as a fraction)
-        // - countedBottles is the sealed backup count (stored as backupKegCount)
+        // - countedBottles is the sealed backup count (stored as backupCount)
         const partialUnits = countedPartialOz ? countedPartialOz / (product?.bottleSizeMl || 750) : 0;
         await storage.updateProduct(productId, { 
           currentCountBottles: partialUnits,
-          backupKegCount: countedBottles || 0,
+          backupCount: countedBottles || 0,
         });
       }
       
@@ -402,7 +402,7 @@ export async function registerRoutes(
     }
   });
 
-  // Receive inventory - kegs go to kegs table, bottles add to backupKegCount
+  // Receive inventory - kegs go to kegs table, bottles add to backupCount
   app.post("/api/receiving", async (req: Request, res: Response) => {
     try {
       if (!req.session.userId) {
@@ -436,11 +436,11 @@ export async function registerRoutes(
           dateKicked: null,
         });
       } else {
-        // For bottles/cans, receiving adds to backupKegCount (sealed inventory)
+        // For bottles/cans, receiving adds to backupCount (sealed inventory)
         const product = await storage.getProduct(productId);
         if (product) {
-          const newBackupCount = (product.backupKegCount || 0) + quantity;
-          await storage.updateProduct(productId, { backupKegCount: newBackupCount });
+          const newBackupCount = (product.backupCount || 0) + quantity;
+          await storage.updateProduct(productId, { backupCount: newBackupCount });
         }
       }
       

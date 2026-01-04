@@ -61,7 +61,7 @@ export const products = pgTable("products", {
   currentCountBottles: real("current_count_bottles").default(0),
   parLevel: integer("par_level"),
   historicalVelocity: real("historical_velocity"),
-  backupKegCount: integer("backup_keg_count").default(0),
+  backupCount: integer("backup_count").default(0),
 });
 
 // Kegs table - individual keg tracking

@@ -391,7 +391,7 @@ export default function InventorySessionPage() {
     setEditFullWeight(product.fullWeightGrams?.toString() || "");
     
     // Initialize backup count from product data
-    setBackupCount(product.backupKegCount || 0);
+    setBackupCount(product.backupCount || 0);
     
     // For kegs, fetch the keg summary
     if (product.isSoldByVolume) {
