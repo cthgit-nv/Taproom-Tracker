@@ -50,6 +50,11 @@ Preferred communication style: Simple, everyday language.
   - Draft beer revenue tracked (quantity from PMB sensors)
   - Environment variables: GOTAB_API_KEY, GOTAB_API_SECRET, GOTAB_LOCATION_UUID
   - Service: `server/gotab.ts`
+- **Barcode Spider**: UPC lookup for unknown products
+  - REST API with token authentication
+  - Auto-populates product name when scanning new items
+  - Environment variable: BARCODESPIDER_API_TOKEN
+  - Service: `server/barcodespider.ts`
 - **PourMyBeer**: Planned integration for keg level sensors
 
 ### Integration Workflow
