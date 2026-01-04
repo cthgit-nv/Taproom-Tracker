@@ -1,5 +1,5 @@
 import { useAuth } from "@/lib/auth-context";
-import { useLocation } from "wouter";
+import { useLocation, Link } from "wouter";
 import { useEffect } from "react";
 import { 
   Beer, 
@@ -10,10 +10,12 @@ import {
   LogOut,
   TrendingDown,
   AlertCircle,
-  CheckCircle
+  CheckCircle,
+  ClipboardList,
+  Truck
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 
 export default function DashboardPage() {
@@ -161,17 +163,39 @@ export default function DashboardPage() {
         <section>
           <h2 className="text-lg font-semibold text-white mb-4">Quick Actions</h2>
           <div className="space-y-3">
-            <Card className="bg-[#0a2419] border-2 border-[#1A4D2E] hover-elevate active-elevate-2 cursor-pointer overflow-visible">
-              <CardContent className="p-4 flex items-center gap-4">
-                <div className="w-12 h-12 rounded-lg bg-[#1A4D2E] flex items-center justify-center">
-                  <Package className="w-6 h-6 text-[#D4AF37]" />
-                </div>
-                <div className="flex-1">
-                  <p className="font-medium text-white">Scan Inventory</p>
-                  <p className="text-sm text-white/60">Update product counts</p>
-                </div>
-              </CardContent>
-            </Card>
+            <Link href="/inventory">
+              <Card 
+                className="bg-[#0a2419] border-2 border-[#1A4D2E] hover-elevate active-elevate-2 cursor-pointer overflow-visible"
+                data-testid="card-inventory-session"
+              >
+                <CardContent className="p-4 flex items-center gap-4">
+                  <div className="w-12 h-12 rounded-lg bg-[#1A4D2E] flex items-center justify-center">
+                    <ClipboardList className="w-6 h-6 text-[#D4AF37]" />
+                  </div>
+                  <div className="flex-1">
+                    <p className="font-medium text-white">Start Count</p>
+                    <p className="text-sm text-white/60">Begin inventory session</p>
+                  </div>
+                </CardContent>
+              </Card>
+            </Link>
+
+            <Link href="/receiving">
+              <Card 
+                className="bg-[#0a2419] border-2 border-[#1A4D2E] hover-elevate active-elevate-2 cursor-pointer overflow-visible"
+                data-testid="card-receiving"
+              >
+                <CardContent className="p-4 flex items-center gap-4">
+                  <div className="w-12 h-12 rounded-lg bg-[#1A4D2E] flex items-center justify-center">
+                    <Truck className="w-6 h-6 text-[#D4AF37]" />
+                  </div>
+                  <div className="flex-1">
+                    <p className="font-medium text-white">Receiving</p>
+                    <p className="text-sm text-white/60">Scan incoming shipments</p>
+                  </div>
+                </CardContent>
+              </Card>
+            </Link>
 
             <Card className="bg-[#0a2419] border-2 border-[#1A4D2E] hover-elevate active-elevate-2 cursor-pointer overflow-visible">
               <CardContent className="p-4 flex items-center gap-4">

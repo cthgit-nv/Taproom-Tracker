@@ -80,6 +80,44 @@ export const taps = pgTable("taps", {
   pmbTapId: text("pmb_tap_id"),
 });
 
+// Zones table - inventory areas (e.g., "Front Bar", "Back Bar", "Storage")
+export const zones = pgTable("zones", {
+  id: integer("id").primaryKey().generatedAlwaysAsIdentity(),
+  name: text("name").notNull().unique(),
+  description: text("description"),
+});
+
+// Inventory Sessions table - tracks counting sessions
+export const inventorySessions = pgTable("inventory_sessions", {
+  id: integer("id").primaryKey().generatedAlwaysAsIdentity(),
+  userId: integer("user_id").references(() => users.id).notNull(),
+  zoneId: integer("zone_id").references(() => zones.id).notNull(),
+  status: text("status", { enum: ["in_progress", "completed", "cancelled"] }).notNull().default("in_progress"),
+  startedAt: timestamp("started_at").notNull().defaultNow(),
+  completedAt: timestamp("completed_at"),
+});
+
+// Inventory Counts table - individual product counts within a session
+export const inventoryCounts = pgTable("inventory_counts", {
+  id: integer("id").primaryKey().generatedAlwaysAsIdentity(),
+  sessionId: integer("session_id").references(() => inventorySessions.id).notNull(),
+  productId: integer("product_id").references(() => products.id).notNull(),
+  expectedCount: real("expected_count"),
+  countedBottles: real("counted_bottles").notNull().default(0),
+  countedPartialOz: real("counted_partial_oz"),
+  countedAt: timestamp("counted_at").notNull().defaultNow(),
+});
+
+// Receiving Log table - tracks incoming shipments
+export const receivingLogs = pgTable("receiving_logs", {
+  id: integer("id").primaryKey().generatedAlwaysAsIdentity(),
+  userId: integer("user_id").references(() => users.id).notNull(),
+  productId: integer("product_id").references(() => products.id).notNull(),
+  quantity: real("quantity").notNull(),
+  isKeg: boolean("is_keg").notNull().default(false),
+  receivedAt: timestamp("received_at").notNull().defaultNow(),
+});
+
 // ==========================================
 // RELATIONS (All relations after tables)
 // ==========================================
@@ -118,6 +156,44 @@ export const tapsRelations = relations(taps, ({ one }) => ({
   }),
 }));
 
+export const zonesRelations = relations(zones, ({ many }) => ({
+  sessions: many(inventorySessions),
+}));
+
+export const inventorySessionsRelations = relations(inventorySessions, ({ one, many }) => ({
+  user: one(users, {
+    fields: [inventorySessions.userId],
+    references: [users.id],
+  }),
+  zone: one(zones, {
+    fields: [inventorySessions.zoneId],
+    references: [zones.id],
+  }),
+  counts: many(inventoryCounts),
+}));
+
+export const inventoryCountsRelations = relations(inventoryCounts, ({ one }) => ({
+  session: one(inventorySessions, {
+    fields: [inventoryCounts.sessionId],
+    references: [inventorySessions.id],
+  }),
+  product: one(products, {
+    fields: [inventoryCounts.productId],
+    references: [products.id],
+  }),
+}));
+
+export const receivingLogsRelations = relations(receivingLogs, ({ one }) => ({
+  user: one(users, {
+    fields: [receivingLogs.userId],
+    references: [users.id],
+  }),
+  product: one(products, {
+    fields: [receivingLogs.productId],
+    references: [products.id],
+  }),
+}));
+
 // ==========================================
 // INSERT SCHEMAS
 // ==========================================
@@ -128,6 +204,10 @@ export const insertDistributorSchema = createInsertSchema(distributors).omit({ i
 export const insertProductSchema = createInsertSchema(products).omit({ id: true });
 export const insertKegSchema = createInsertSchema(kegs).omit({ id: true });
 export const insertTapSchema = createInsertSchema(taps);
+export const insertZoneSchema = createInsertSchema(zones).omit({ id: true });
+export const insertInventorySessionSchema = createInsertSchema(inventorySessions).omit({ id: true, startedAt: true });
+export const insertInventoryCountSchema = createInsertSchema(inventoryCounts).omit({ id: true, countedAt: true });
+export const insertReceivingLogSchema = createInsertSchema(receivingLogs).omit({ id: true, receivedAt: true });
 
 // ==========================================
 // TYPES
@@ -150,6 +230,18 @@ export type Keg = typeof kegs.$inferSelect;
 
 export type InsertTap = z.infer<typeof insertTapSchema>;
 export type Tap = typeof taps.$inferSelect;
+
+export type InsertZone = z.infer<typeof insertZoneSchema>;
+export type Zone = typeof zones.$inferSelect;
+
+export type InsertInventorySession = z.infer<typeof insertInventorySessionSchema>;
+export type InventorySession = typeof inventorySessions.$inferSelect;
+
+export type InsertInventoryCount = z.infer<typeof insertInventoryCountSchema>;
+export type InventoryCount = typeof inventoryCounts.$inferSelect;
+
+export type InsertReceivingLog = z.infer<typeof insertReceivingLogSchema>;
+export type ReceivingLog = typeof receivingLogs.$inferSelect;
 
 // ==========================================
 // VALIDATION SCHEMAS

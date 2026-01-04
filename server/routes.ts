@@ -2,7 +2,7 @@ import type { Express, Request, Response } from "express";
 import { createServer, type Server } from "http";
 import session from "express-session";
 import { storage } from "./storage";
-import { pinLoginSchema } from "@shared/schema";
+import { pinLoginSchema, insertProductSchema } from "@shared/schema";
 import { z } from "zod";
 
 // Extend express-session types
@@ -179,6 +179,229 @@ export async function registerRoutes(
       return res.json(taps);
     } catch (error) {
       console.error("Get taps error:", error);
+      return res.status(500).json({ error: "Internal server error" });
+    }
+  });
+
+  // ========================
+  // Zones Routes
+  // ========================
+  
+  app.get("/api/zones", async (_req: Request, res: Response) => {
+    try {
+      const zones = await storage.getAllZones();
+      return res.json(zones);
+    } catch (error) {
+      console.error("Get zones error:", error);
+      return res.status(500).json({ error: "Internal server error" });
+    }
+  });
+
+  // ========================
+  // Inventory Session Routes
+  // ========================
+  
+  // Start a new inventory session
+  app.post("/api/inventory/sessions", async (req: Request, res: Response) => {
+    try {
+      if (!req.session.userId) {
+        return res.status(401).json({ error: "Not authenticated" });
+      }
+      
+      const { zoneId } = req.body;
+      
+      if (!zoneId) {
+        return res.status(400).json({ error: "Zone ID is required" });
+      }
+      
+      // Check for existing active session
+      const activeSession = await storage.getActiveSession(req.session.userId);
+      if (activeSession) {
+        return res.status(400).json({ error: "You already have an active session", session: activeSession });
+      }
+      
+      const session = await storage.createInventorySession({
+        userId: req.session.userId,
+        zoneId,
+        status: "in_progress",
+        completedAt: null,
+      });
+      
+      return res.json(session);
+    } catch (error) {
+      console.error("Create session error:", error);
+      return res.status(500).json({ error: "Internal server error" });
+    }
+  });
+
+  // Get active session for current user
+  app.get("/api/inventory/sessions/active", async (req: Request, res: Response) => {
+    try {
+      if (!req.session.userId) {
+        return res.status(401).json({ error: "Not authenticated" });
+      }
+      
+      const session = await storage.getActiveSession(req.session.userId);
+      return res.json(session || null);
+    } catch (error) {
+      console.error("Get active session error:", error);
+      return res.status(500).json({ error: "Internal server error" });
+    }
+  });
+
+  // Get session by ID with counts
+  app.get("/api/inventory/sessions/:id", async (req: Request, res: Response) => {
+    try {
+      const sessionId = parseInt(req.params.id);
+      const session = await storage.getInventorySession(sessionId);
+      
+      if (!session) {
+        return res.status(404).json({ error: "Session not found" });
+      }
+      
+      const counts = await storage.getCountsBySession(sessionId);
+      return res.json({ session, counts });
+    } catch (error) {
+      console.error("Get session error:", error);
+      return res.status(500).json({ error: "Internal server error" });
+    }
+  });
+
+  // Complete/cancel a session
+  app.patch("/api/inventory/sessions/:id", async (req: Request, res: Response) => {
+    try {
+      const sessionId = parseInt(req.params.id);
+      const { status } = req.body;
+      
+      if (!["completed", "cancelled"].includes(status)) {
+        return res.status(400).json({ error: "Invalid status" });
+      }
+      
+      const session = await storage.updateInventorySession(sessionId, {
+        status,
+        completedAt: new Date(),
+      });
+      
+      return res.json(session);
+    } catch (error) {
+      console.error("Update session error:", error);
+      return res.status(500).json({ error: "Internal server error" });
+    }
+  });
+
+  // ========================
+  // Inventory Count Routes
+  // ========================
+  
+  // Add/update a count in a session
+  app.post("/api/inventory/counts", async (req: Request, res: Response) => {
+    try {
+      const { sessionId, productId, countedBottles, countedPartialOz, expectedCount } = req.body;
+      
+      if (!sessionId || !productId) {
+        return res.status(400).json({ error: "Session ID and Product ID are required" });
+      }
+      
+      const count = await storage.createInventoryCount({
+        sessionId,
+        productId,
+        countedBottles: countedBottles || 0,
+        countedPartialOz: countedPartialOz || null,
+        expectedCount: expectedCount || null,
+      });
+      
+      // Update product's current count
+      const totalCount = (countedBottles || 0) + (countedPartialOz ? countedPartialOz / 750 : 0);
+      await storage.updateProduct(productId, { currentCountBottles: totalCount });
+      
+      return res.json(count);
+    } catch (error) {
+      console.error("Create count error:", error);
+      return res.status(500).json({ error: "Internal server error" });
+    }
+  });
+
+  // ========================
+  // Receiving Routes
+  // ========================
+  
+  // Look up product by UPC
+  app.get("/api/products/upc/:upc", async (req: Request, res: Response) => {
+    try {
+      const product = await storage.getProductByUpc(req.params.upc);
+      return res.json(product || null);
+    } catch (error) {
+      console.error("Get product by UPC error:", error);
+      return res.status(500).json({ error: "Internal server error" });
+    }
+  });
+
+  // Receive inventory
+  app.post("/api/receiving", async (req: Request, res: Response) => {
+    try {
+      if (!req.session.userId) {
+        return res.status(401).json({ error: "Not authenticated" });
+      }
+      
+      const { productId, quantity, isKeg } = req.body;
+      
+      if (!productId || quantity === undefined) {
+        return res.status(400).json({ error: "Product ID and quantity are required" });
+      }
+      
+      // Create receiving log
+      const log = await storage.createReceivingLog({
+        userId: req.session.userId,
+        productId,
+        quantity,
+        isKeg: isKeg || false,
+      });
+      
+      // If it's a keg, create a new keg record
+      if (isKeg) {
+        await storage.createKeg({
+          productId,
+          status: "on_deck",
+          initialVolOz: 1984, // Standard 1/2 barrel (15.5 gal = 1984 oz)
+          remainingVolOz: 1984,
+          dateReceived: new Date(),
+          dateTapped: null,
+          dateKicked: null,
+        });
+      } else {
+        // Update product count for bottles
+        const product = await storage.getProduct(productId);
+        if (product) {
+          const newCount = (product.currentCountBottles || 0) + quantity;
+          await storage.updateProduct(productId, { currentCountBottles: newCount });
+        }
+      }
+      
+      return res.json(log);
+    } catch (error) {
+      console.error("Receive inventory error:", error);
+      return res.status(500).json({ error: "Internal server error" });
+    }
+  });
+
+  // Create new product (for unknown UPCs)
+  app.post("/api/products", async (req: Request, res: Response) => {
+    try {
+      const product = await storage.createProduct(req.body);
+      return res.json(product);
+    } catch (error) {
+      console.error("Create product error:", error);
+      return res.status(500).json({ error: "Internal server error" });
+    }
+  });
+
+  // Get single product
+  app.get("/api/products/:id", async (req: Request, res: Response) => {
+    try {
+      const product = await storage.getProduct(parseInt(req.params.id));
+      return res.json(product || null);
+    } catch (error) {
+      console.error("Get product error:", error);
       return res.status(500).json({ error: "Internal server error" });
     }
   });

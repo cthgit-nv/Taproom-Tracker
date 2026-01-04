@@ -1,14 +1,18 @@
 import { 
-  users, settings, distributors, products, kegs, taps,
+  users, settings, distributors, products, kegs, taps, zones, inventorySessions, inventoryCounts, receivingLogs,
   type User, type InsertUser,
   type Settings, type InsertSettings,
   type Distributor, type InsertDistributor,
   type Product, type InsertProduct,
   type Keg, type InsertKeg,
-  type Tap, type InsertTap
+  type Tap, type InsertTap,
+  type Zone, type InsertZone,
+  type InventorySession, type InsertInventorySession,
+  type InventoryCount, type InsertInventoryCount,
+  type ReceivingLog, type InsertReceivingLog
 } from "@shared/schema";
 import { db } from "./db";
-import { eq } from "drizzle-orm";
+import { eq, and } from "drizzle-orm";
 
 export interface IStorage {
   // Users
@@ -45,6 +49,30 @@ export interface IStorage {
   getAllTaps(): Promise<Tap[]>;
   createTap(tap: InsertTap): Promise<Tap>;
   updateTap(tapNumber: number, tap: Partial<InsertTap>): Promise<Tap | undefined>;
+  
+  // Zones
+  getZone(id: number): Promise<Zone | undefined>;
+  getAllZones(): Promise<Zone[]>;
+  createZone(zone: InsertZone): Promise<Zone>;
+  
+  // Inventory Sessions
+  getInventorySession(id: number): Promise<InventorySession | undefined>;
+  getActiveSession(userId: number): Promise<InventorySession | undefined>;
+  createInventorySession(session: InsertInventorySession): Promise<InventorySession>;
+  updateInventorySession(id: number, session: Partial<InsertInventorySession>): Promise<InventorySession | undefined>;
+  
+  // Inventory Counts
+  getInventoryCount(id: number): Promise<InventoryCount | undefined>;
+  getCountsBySession(sessionId: number): Promise<InventoryCount[]>;
+  createInventoryCount(count: InsertInventoryCount): Promise<InventoryCount>;
+  updateInventoryCount(id: number, count: Partial<InsertInventoryCount>): Promise<InventoryCount | undefined>;
+  
+  // Receiving Logs
+  createReceivingLog(log: InsertReceivingLog): Promise<ReceivingLog>;
+  getReceivingLogs(): Promise<ReceivingLog[]>;
+  
+  // Product lookup
+  getProductByUpc(upc: string): Promise<Product | undefined>;
 }
 
 export class DatabaseStorage implements IStorage {
@@ -160,6 +188,79 @@ export class DatabaseStorage implements IStorage {
 
   async updateTap(tapNumber: number, updateData: Partial<InsertTap>): Promise<Tap | undefined> {
     const [result] = await db.update(taps).set(updateData).where(eq(taps.tapNumber, tapNumber)).returning();
+    return result || undefined;
+  }
+
+  // Zones
+  async getZone(id: number): Promise<Zone | undefined> {
+    const [result] = await db.select().from(zones).where(eq(zones.id, id));
+    return result || undefined;
+  }
+
+  async getAllZones(): Promise<Zone[]> {
+    return db.select().from(zones);
+  }
+
+  async createZone(insertZone: InsertZone): Promise<Zone> {
+    const [result] = await db.insert(zones).values(insertZone).returning();
+    return result;
+  }
+
+  // Inventory Sessions
+  async getInventorySession(id: number): Promise<InventorySession | undefined> {
+    const [result] = await db.select().from(inventorySessions).where(eq(inventorySessions.id, id));
+    return result || undefined;
+  }
+
+  async getActiveSession(userId: number): Promise<InventorySession | undefined> {
+    const [result] = await db.select().from(inventorySessions)
+      .where(and(eq(inventorySessions.userId, userId), eq(inventorySessions.status, "in_progress")));
+    return result || undefined;
+  }
+
+  async createInventorySession(insertSession: InsertInventorySession): Promise<InventorySession> {
+    const [result] = await db.insert(inventorySessions).values(insertSession).returning();
+    return result;
+  }
+
+  async updateInventorySession(id: number, updateData: Partial<InsertInventorySession>): Promise<InventorySession | undefined> {
+    const [result] = await db.update(inventorySessions).set(updateData).where(eq(inventorySessions.id, id)).returning();
+    return result || undefined;
+  }
+
+  // Inventory Counts
+  async getInventoryCount(id: number): Promise<InventoryCount | undefined> {
+    const [result] = await db.select().from(inventoryCounts).where(eq(inventoryCounts.id, id));
+    return result || undefined;
+  }
+
+  async getCountsBySession(sessionId: number): Promise<InventoryCount[]> {
+    return db.select().from(inventoryCounts).where(eq(inventoryCounts.sessionId, sessionId));
+  }
+
+  async createInventoryCount(insertCount: InsertInventoryCount): Promise<InventoryCount> {
+    const [result] = await db.insert(inventoryCounts).values(insertCount).returning();
+    return result;
+  }
+
+  async updateInventoryCount(id: number, updateData: Partial<InsertInventoryCount>): Promise<InventoryCount | undefined> {
+    const [result] = await db.update(inventoryCounts).set(updateData).where(eq(inventoryCounts.id, id)).returning();
+    return result || undefined;
+  }
+
+  // Receiving Logs
+  async createReceivingLog(insertLog: InsertReceivingLog): Promise<ReceivingLog> {
+    const [result] = await db.insert(receivingLogs).values(insertLog).returning();
+    return result;
+  }
+
+  async getReceivingLogs(): Promise<ReceivingLog[]> {
+    return db.select().from(receivingLogs);
+  }
+
+  // Product lookup
+  async getProductByUpc(upc: string): Promise<Product | undefined> {
+    const [result] = await db.select().from(products).where(eq(products.upc, upc));
     return result || undefined;
   }
 }

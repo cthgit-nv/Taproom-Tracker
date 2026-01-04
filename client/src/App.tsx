@@ -6,6 +6,8 @@ import { TooltipProvider } from "@/components/ui/tooltip";
 import { AuthProvider } from "@/lib/auth-context";
 import LoginPage from "@/pages/login";
 import DashboardPage from "@/pages/dashboard";
+import InventorySessionPage from "@/pages/inventory-session";
+import ReceivingPage from "@/pages/receiving";
 import NotFound from "@/pages/not-found";
 
 function Router() {
@@ -13,6 +15,8 @@ function Router() {
     <Switch>
       <Route path="/" component={LoginPage} />
       <Route path="/dashboard" component={DashboardPage} />
+      <Route path="/inventory" component={InventorySessionPage} />
+      <Route path="/receiving" component={ReceivingPage} />
       <Route component={NotFound} />
     </Switch>
   );
