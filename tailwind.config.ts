@@ -96,10 +96,21 @@ export default {
           from: { height: "var(--radix-accordion-content-height)" },
           to: { height: "0" },
         },
+        "shake": {
+          "0%, 100%": { transform: "translateX(0)" },
+          "10%, 30%, 50%, 70%, 90%": { transform: "translateX(-8px)" },
+          "20%, 40%, 60%, 80%": { transform: "translateX(8px)" },
+        },
+        "pulse-gold": {
+          "0%, 100%": { boxShadow: "0 0 0 0 rgba(212, 175, 55, 0.4)" },
+          "50%": { boxShadow: "0 0 0 8px rgba(212, 175, 55, 0)" },
+        },
       },
       animation: {
         "accordion-down": "accordion-down 0.2s ease-out",
         "accordion-up": "accordion-up 0.2s ease-out",
+        "shake": "shake 0.5s cubic-bezier(.36,.07,.19,.97) both",
+        "pulse-gold": "pulse-gold 1.5s ease-in-out infinite",
       },
     },
   },
