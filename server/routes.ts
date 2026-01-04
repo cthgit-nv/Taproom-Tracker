@@ -144,6 +144,36 @@ export async function registerRoutes(
     }
   });
 
+  // Create distributor (admin/owner only)
+  app.post("/api/distributors", async (req: Request, res: Response) => {
+    try {
+      if (!req.session.userId) {
+        return res.status(401).json({ error: "Not authenticated" });
+      }
+      
+      const currentUser = await storage.getUser(req.session.userId);
+      if (!currentUser || !["admin", "owner"].includes(currentUser.role)) {
+        return res.status(403).json({ error: "Admin access required" });
+      }
+      
+      const { name, email, orderMinimum } = req.body;
+      if (!name || name.trim() === "") {
+        return res.status(400).json({ error: "Distributor name is required" });
+      }
+      
+      const distributor = await storage.createDistributor({
+        name: name.trim(),
+        email: email || null,
+        orderMinimum: orderMinimum || null,
+      });
+      
+      return res.json(distributor);
+    } catch (error) {
+      console.error("Create distributor error:", error);
+      return res.status(500).json({ error: "Internal server error" });
+    }
+  });
+
   // ========================
   // Products Routes
   // ========================
@@ -154,6 +184,107 @@ export async function registerRoutes(
       return res.json(products);
     } catch (error) {
       console.error("Get products error:", error);
+      return res.status(500).json({ error: "Internal server error" });
+    }
+  });
+
+  // Search products by name (for manual inventory entry)
+  app.get("/api/products/search", async (req: Request, res: Response) => {
+    try {
+      const query = (req.query.q as string || "").toLowerCase().trim();
+      if (!query || query.length < 2) {
+        return res.json([]);
+      }
+      
+      const allProducts = await storage.getAllProducts();
+      const matches = allProducts.filter(p => 
+        p.name.toLowerCase().includes(query) ||
+        p.manufacturer?.toLowerCase().includes(query) ||
+        p.style?.toLowerCase().includes(query) ||
+        p.upc?.includes(query)
+      ).slice(0, 20); // Limit to 20 results
+      
+      return res.json(matches);
+    } catch (error) {
+      console.error("Search products error:", error);
+      return res.status(500).json({ error: "Internal server error" });
+    }
+  });
+
+  // Create new product with duplicate detection
+  app.post("/api/products", async (req: Request, res: Response) => {
+    try {
+      if (!req.session.userId) {
+        return res.status(401).json({ error: "Not authenticated" });
+      }
+      
+      const { name, upc, distributorId, manufacturer, beverageType, style, notes, abv, ibu, isLocal, skipDuplicateCheck } = req.body;
+      
+      if (!name || name.trim() === "") {
+        return res.status(400).json({ error: "Product name is required" });
+      }
+      
+      const allProducts = await storage.getAllProducts();
+      
+      // Duplicate detection unless explicitly skipped
+      if (!skipDuplicateCheck) {
+        const normalizedName = name.toLowerCase().trim();
+        
+        // Check for exact UPC match
+        if (upc) {
+          const upcMatch = allProducts.find(p => p.upc === upc);
+          if (upcMatch) {
+            return res.status(409).json({ 
+              error: "Duplicate product",
+              message: "A product with this UPC already exists",
+              existingProduct: upcMatch 
+            });
+          }
+        }
+        
+        // Check for similar name matches (fuzzy)
+        const similarProducts = allProducts.filter(p => {
+          const existingName = p.name.toLowerCase().trim();
+          // Exact match
+          if (existingName === normalizedName) return true;
+          // Contains match (either direction)
+          if (existingName.includes(normalizedName) || normalizedName.includes(existingName)) return true;
+          // Same manufacturer and similar name
+          if (manufacturer && p.manufacturer?.toLowerCase() === manufacturer.toLowerCase()) {
+            const words1 = normalizedName.split(/\s+/);
+            const words2 = existingName.split(/\s+/);
+            const commonWords = words1.filter(w => words2.includes(w));
+            if (commonWords.length >= 2) return true;
+          }
+          return false;
+        });
+        
+        if (similarProducts.length > 0) {
+          return res.status(409).json({
+            error: "Potential duplicate",
+            message: "Similar products already exist. Review and confirm to add anyway.",
+            similarProducts: similarProducts.slice(0, 5)
+          });
+        }
+      }
+      
+      // Create the product
+      const product = await storage.createProduct({
+        name: name.trim(),
+        upc: upc || null,
+        distributorId: distributorId || null,
+        manufacturer: manufacturer || null,
+        beverageType: beverageType || "beer",
+        style: style || null,
+        notes: notes || null,
+        abv: abv || null,
+        ibu: ibu || null,
+        isLocal: isLocal || false,
+      });
+      
+      return res.json(product);
+    } catch (error) {
+      console.error("Create product error:", error);
       return res.status(500).json({ error: "Internal server error" });
     }
   });
@@ -1117,6 +1248,7 @@ export async function registerRoutes(
               labelImageUrl: item.label_image_hd || item.label_image || undefined,
               untappdRating: item.rating ?? undefined,
               untappdRatingCount: item.rating_count ?? undefined,
+              manufacturer: item.brewery ?? undefined,
             });
             updated++;
           } else {
@@ -1133,6 +1265,8 @@ export async function registerRoutes(
               isSoldByVolume: true, // Draft beers are sold by volume
               untappdRating: item.rating ?? undefined,
               untappdRatingCount: item.rating_count ?? undefined,
+              manufacturer: item.brewery ?? undefined,
+              beverageType: "beer",
             });
             
             newBeers.push({

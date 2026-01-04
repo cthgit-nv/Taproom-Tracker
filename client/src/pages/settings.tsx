@@ -1,23 +1,73 @@
+import { useState } from "react";
 import { useAuth } from "@/lib/auth-context";
 import { useLocation } from "wouter";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { queryClient, apiRequest } from "@/lib/queryClient";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
 import { Badge } from "@/components/ui/badge";
-import { ArrowLeft, AlertTriangle, Shield, Database, Info, Home, Package, Beer, ShoppingCart, Settings as SettingsIcon } from "lucide-react";
+import { ArrowLeft, AlertTriangle, Shield, Database, Info, Home, Package, Beer, ShoppingCart, Settings as SettingsIcon, Plus, Truck, Calculator, Loader2 } from "lucide-react";
 import { Link } from "wouter";
 import { useToast } from "@/hooks/use-toast";
-import type { Settings } from "@shared/schema";
+import type { Settings, Distributor } from "@shared/schema";
 
 export default function SettingsPage() {
   const { user, logout } = useAuth();
   const [, setLocation] = useLocation();
   const { toast } = useToast();
+  
+  // State for new distributor form
+  const [newDistributorName, setNewDistributorName] = useState("");
+  const [newDistributorEmail, setNewDistributorEmail] = useState("");
+  const [showAddDistributor, setShowAddDistributor] = useState(false);
+  
+  // State for score formula editing
+  const [editingFormula, setEditingFormula] = useState(false);
+  const [velocityWeight, setVelocityWeight] = useState(0.4);
+  const [ratingWeight, setRatingWeight] = useState(0.3);
+  const [localWeight, setLocalWeight] = useState(0.2);
+  const [profitWeight, setProfitWeight] = useState(0.1);
 
   const { data: settings, isLoading } = useQuery<Settings>({
     queryKey: ["/api/settings"],
+  });
+  
+  const { data: distributors = [] } = useQuery<Distributor[]>({
+    queryKey: ["/api/distributors"],
+  });
+
+  const createDistributorMutation = useMutation({
+    mutationFn: async ({ name, email }: { name: string; email?: string }) => {
+      const res = await apiRequest("POST", "/api/distributors", { name, email });
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/distributors"] });
+      setNewDistributorName("");
+      setNewDistributorEmail("");
+      setShowAddDistributor(false);
+      toast({ title: "Distributor Added", description: "New distributor created successfully" });
+    },
+    onError: () => {
+      toast({ title: "Error", description: "Failed to add distributor", variant: "destructive" });
+    },
+  });
+
+  const updateScoreFormulaMutation = useMutation({
+    mutationFn: async (weights: { scoreVelocityWeight: number; scoreRatingWeight: number; scoreLocalWeight: number; scoreProfitWeight: number }) => {
+      return apiRequest("PATCH", "/api/settings", weights);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/settings"] });
+      setEditingFormula(false);
+      toast({ title: "Formula Updated", description: "Smart Order score formula saved" });
+    },
+    onError: () => {
+      toast({ title: "Error", description: "Failed to update formula", variant: "destructive" });
+    },
   });
 
   const toggleSimulationMutation = useMutation({
@@ -142,6 +192,230 @@ export default function SettingsPage() {
             </Button>
           </CardContent>
         </Card>
+
+        {/* Distributor Management - Admin/Owner only */}
+        {(user.role === "admin" || user.role === "owner") && (
+          <Card className="bg-[#0a2419] border-2 border-[#1A4D2E]">
+            <CardHeader className="pb-2">
+              <CardTitle className="text-base text-white flex items-center gap-2">
+                <Truck className="w-5 h-5 text-[#D4AF37]" />
+                Distributors
+              </CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-3">
+              <p className="text-sm text-white/60">
+                Manage distributors for product ordering and inventory tracking.
+              </p>
+              
+              {distributors.length > 0 && (
+                <div className="space-y-1 max-h-32 overflow-y-auto">
+                  {distributors.map(d => (
+                    <div key={d.id} className="flex items-center justify-between py-1 text-sm">
+                      <span className="text-white">{d.name}</span>
+                      {d.email && <span className="text-white/40 text-xs">{d.email}</span>}
+                    </div>
+                  ))}
+                </div>
+              )}
+              
+              {showAddDistributor ? (
+                <div className="space-y-2 p-3 bg-[#051a11] rounded-md">
+                  <div className="space-y-1">
+                    <Label className="text-white/60 text-xs">Name *</Label>
+                    <Input
+                      value={newDistributorName}
+                      onChange={(e) => setNewDistributorName(e.target.value)}
+                      placeholder="Distributor name"
+                      className="bg-[#0a2419] border-[#1A4D2E] text-white"
+                      data-testid="input-distributor-name"
+                    />
+                  </div>
+                  <div className="space-y-1">
+                    <Label className="text-white/60 text-xs">Email (optional)</Label>
+                    <Input
+                      value={newDistributorEmail}
+                      onChange={(e) => setNewDistributorEmail(e.target.value)}
+                      placeholder="orders@distributor.com"
+                      className="bg-[#0a2419] border-[#1A4D2E] text-white"
+                      data-testid="input-distributor-email"
+                    />
+                  </div>
+                  <div className="flex gap-2">
+                    <Button
+                      size="sm"
+                      onClick={() => {
+                        if (newDistributorName.trim()) {
+                          createDistributorMutation.mutate({
+                            name: newDistributorName.trim(),
+                            email: newDistributorEmail.trim() || undefined,
+                          });
+                        }
+                      }}
+                      disabled={!newDistributorName.trim() || createDistributorMutation.isPending}
+                      className="flex-1 bg-[#1A4D2E]"
+                      data-testid="button-save-distributor"
+                    >
+                      {createDistributorMutation.isPending ? <Loader2 className="w-4 h-4 animate-spin" /> : "Save"}
+                    </Button>
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      onClick={() => setShowAddDistributor(false)}
+                      className="text-white/60"
+                    >
+                      Cancel
+                    </Button>
+                  </div>
+                </div>
+              ) : (
+                <Button
+                  variant="outline"
+                  className="w-full border-[#1A4D2E] text-white/80"
+                  onClick={() => setShowAddDistributor(true)}
+                  data-testid="button-add-distributor"
+                >
+                  <Plus className="w-4 h-4 mr-2" />
+                  Add Distributor
+                </Button>
+              )}
+            </CardContent>
+          </Card>
+        )}
+
+        {/* Smart Order Score Formula - Admin/Owner only */}
+        {(user.role === "admin" || user.role === "owner") && (
+          <Card className="bg-[#0a2419] border-2 border-[#1A4D2E]">
+            <CardHeader className="pb-2">
+              <CardTitle className="text-base text-white flex items-center gap-2">
+                <Calculator className="w-5 h-5 text-[#D4AF37]" />
+                Smart Order Score Formula
+              </CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-3">
+              <p className="text-sm text-white/60">
+                Adjust the weights used to calculate the Draft Pick score for ordering recommendations.
+              </p>
+              
+              {editingFormula ? (
+                <div className="space-y-3 p-3 bg-[#051a11] rounded-md">
+                  <div className="space-y-2">
+                    <div className="flex items-center justify-between">
+                      <Label className="text-white/80 text-sm">Velocity (Sales Speed)</Label>
+                      <Input
+                        type="number"
+                        step="0.1"
+                        min="0"
+                        max="1"
+                        value={velocityWeight}
+                        onChange={(e) => setVelocityWeight(parseFloat(e.target.value) || 0)}
+                        className="w-20 bg-[#0a2419] border-[#1A4D2E] text-white text-right"
+                        data-testid="input-velocity-weight"
+                      />
+                    </div>
+                    <div className="flex items-center justify-between">
+                      <Label className="text-white/80 text-sm">Rating (Untappd Score)</Label>
+                      <Input
+                        type="number"
+                        step="0.1"
+                        min="0"
+                        max="1"
+                        value={ratingWeight}
+                        onChange={(e) => setRatingWeight(parseFloat(e.target.value) || 0)}
+                        className="w-20 bg-[#0a2419] border-[#1A4D2E] text-white text-right"
+                        data-testid="input-rating-weight"
+                      />
+                    </div>
+                    <div className="flex items-center justify-between">
+                      <Label className="text-white/80 text-sm">Local (Support Local)</Label>
+                      <Input
+                        type="number"
+                        step="0.1"
+                        min="0"
+                        max="1"
+                        value={localWeight}
+                        onChange={(e) => setLocalWeight(parseFloat(e.target.value) || 0)}
+                        className="w-20 bg-[#0a2419] border-[#1A4D2E] text-white text-right"
+                        data-testid="input-local-weight"
+                      />
+                    </div>
+                    <div className="flex items-center justify-between">
+                      <Label className="text-white/80 text-sm">Profit Margin</Label>
+                      <Input
+                        type="number"
+                        step="0.1"
+                        min="0"
+                        max="1"
+                        value={profitWeight}
+                        onChange={(e) => setProfitWeight(parseFloat(e.target.value) || 0)}
+                        className="w-20 bg-[#0a2419] border-[#1A4D2E] text-white text-right"
+                        data-testid="input-profit-weight"
+                      />
+                    </div>
+                  </div>
+                  
+                  <div className="text-xs text-white/40 text-center">
+                    Total: {(velocityWeight + ratingWeight + localWeight + profitWeight).toFixed(1)}
+                    {Math.abs(velocityWeight + ratingWeight + localWeight + profitWeight - 1) > 0.01 && (
+                      <span className="text-orange-400 ml-2">(Should equal 1.0)</span>
+                    )}
+                  </div>
+                  
+                  <div className="flex gap-2">
+                    <Button
+                      size="sm"
+                      onClick={() => updateScoreFormulaMutation.mutate({
+                        scoreVelocityWeight: velocityWeight,
+                        scoreRatingWeight: ratingWeight,
+                        scoreLocalWeight: localWeight,
+                        scoreProfitWeight: profitWeight,
+                      })}
+                      disabled={updateScoreFormulaMutation.isPending}
+                      className="flex-1 bg-[#1A4D2E]"
+                      data-testid="button-save-formula"
+                    >
+                      {updateScoreFormulaMutation.isPending ? <Loader2 className="w-4 h-4 animate-spin" /> : "Save"}
+                    </Button>
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      onClick={() => setEditingFormula(false)}
+                      className="text-white/60"
+                    >
+                      Cancel
+                    </Button>
+                  </div>
+                </div>
+              ) : (
+                <div className="space-y-2">
+                  <div className="grid grid-cols-2 gap-2 text-sm">
+                    <span className="text-white/60">Velocity:</span>
+                    <span className="text-white text-right">{settings?.scoreVelocityWeight ?? 0.4}</span>
+                    <span className="text-white/60">Rating:</span>
+                    <span className="text-white text-right">{settings?.scoreRatingWeight ?? 0.3}</span>
+                    <span className="text-white/60">Local:</span>
+                    <span className="text-white text-right">{settings?.scoreLocalWeight ?? 0.2}</span>
+                    <span className="text-white/60">Profit:</span>
+                    <span className="text-white text-right">{settings?.scoreProfitWeight ?? 0.1}</span>
+                  </div>
+                  <Button
+                    variant="outline"
+                    className="w-full border-[#1A4D2E] text-white/80 mt-2"
+                    onClick={() => {
+                      setVelocityWeight(settings?.scoreVelocityWeight ?? 0.4);
+                      setRatingWeight(settings?.scoreRatingWeight ?? 0.3);
+                      setLocalWeight(settings?.scoreLocalWeight ?? 0.2);
+                      setProfitWeight(settings?.scoreProfitWeight ?? 0.1);
+                      setEditingFormula(true);
+                    }}
+                    data-testid="button-edit-formula"
+                  >
+                    Edit Formula
+                  </Button>
+                </div>
+              )}
+            </CardContent>
+          </Card>
+        )}
 
         <Card className="bg-[#0a2419] border-2 border-[#1A4D2E]">
           <CardHeader className="pb-2">

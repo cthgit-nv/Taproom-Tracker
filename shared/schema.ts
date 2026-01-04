@@ -32,6 +32,11 @@ export const settings = pgTable("settings", {
   untappdReadToken: text("untappd_read_token"),
   untappdWriteToken: text("untappd_write_token"),
   untappdMenuId: text("untappd_menu_id"),
+  // Smart Order score formula coefficients (admin editable)
+  scoreVelocityWeight: real("score_velocity_weight").notNull().default(0.4),
+  scoreRatingWeight: real("score_rating_weight").notNull().default(0.3),
+  scoreLocalWeight: real("score_local_weight").notNull().default(0.2),
+  scoreProfitWeight: real("score_profit_weight").notNull().default(0.1),
 });
 
 // Distributors table

@@ -61,6 +61,7 @@ export default function ProductsPage() {
   const [filterDistributor, setFilterDistributor] = useState<string>("all");
   const [searchTerm, setSearchTerm] = useState("");
   const [expandedProduct, setExpandedProduct] = useState<number | null>(null);
+  const [activeCategory, setActiveCategory] = useState<string>("all");
 
   const { data: products = [], isLoading: productsLoading } = useQuery<Product[]>({
     queryKey: ["/api/products"],
@@ -101,14 +102,29 @@ export default function ProductsPage() {
   const styles = Array.from(new Set(products.map(p => p.style).filter((x): x is string => Boolean(x))));
   const types = Array.from(new Set(products.map(p => p.beverageType).filter(Boolean))) as string[];
 
+  // Count products by category for nav badges
+  const categoryCounts = {
+    all: products.length,
+    beer: products.filter(p => p.beverageType === "beer").length,
+    cider: products.filter(p => p.beverageType === "cider").length,
+    wine: products.filter(p => p.beverageType === "wine").length,
+    liquor: products.filter(p => p.beverageType === "liquor").length,
+    na: products.filter(p => p.beverageType === "na").length,
+  };
+
   const filteredProducts = products.filter(product => {
+    // Category quick filter (overrides type filter)
+    if (activeCategory !== "all" && product.beverageType !== activeCategory) {
+      return false;
+    }
     if (searchTerm && !product.name.toLowerCase().includes(searchTerm.toLowerCase())) {
       return false;
     }
     if (filterManufacturer !== "all" && product.manufacturer !== filterManufacturer) {
       return false;
     }
-    if (filterType !== "all" && product.beverageType !== filterType) {
+    // Only apply type filter if category is "all"
+    if (activeCategory === "all" && filterType !== "all" && product.beverageType !== filterType) {
       return false;
     }
     if (filterStyle !== "all" && product.style !== filterStyle) {
@@ -156,6 +172,38 @@ export default function ProductsPage() {
           </Button>
         </div>
       </header>
+
+      {/* Category Quick Navigation */}
+      <div className="sticky top-[57px] z-40 bg-[#051a11] border-b border-[#1A4D2E] overflow-x-auto">
+        <div className="flex gap-1 p-2 min-w-max">
+          {[
+            { key: "all", label: "All", icon: Package },
+            { key: "beer", label: "Beer", icon: Beer },
+            { key: "cider", label: "Cider", icon: Beer },
+            { key: "wine", label: "Wine", icon: Beer },
+            { key: "liquor", label: "Liquor", icon: Beer },
+            { key: "na", label: "N/A", icon: Beer },
+          ].map(({ key, label }) => (
+            <Button
+              key={key}
+              variant={activeCategory === key ? "default" : "ghost"}
+              size="sm"
+              onClick={() => setActiveCategory(key)}
+              className={`flex-shrink-0 gap-1 ${
+                activeCategory === key 
+                  ? "bg-[#1A4D2E] text-white" 
+                  : "text-white/60"
+              }`}
+              data-testid={`category-${key}`}
+            >
+              {label}
+              <Badge variant="secondary" className="ml-1 px-1.5 py-0 text-xs bg-white/10">
+                {categoryCounts[key as keyof typeof categoryCounts]}
+              </Badge>
+            </Button>
+          ))}
+        </div>
+      </div>
 
       <Collapsible open={showFilters} onOpenChange={setShowFilters}>
         <CollapsibleContent>
