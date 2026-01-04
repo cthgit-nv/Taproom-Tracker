@@ -253,7 +253,7 @@ export async function registerRoutes(
           if (manufacturer && p.manufacturer?.toLowerCase() === manufacturer.toLowerCase()) {
             const words1 = normalizedName.split(/\s+/);
             const words2 = existingName.split(/\s+/);
-            const commonWords = words1.filter(w => words2.includes(w));
+            const commonWords = words1.filter((w: string) => words2.includes(w));
             if (commonWords.length >= 2) return true;
           }
           return false;

@@ -27,6 +27,54 @@ import { untappdService, type UntappdBeer } from "@/services/UntappdService";
 
 type Mode = "scanning" | "known_product" | "new_product";
 
+// Helper to normalize Barcode Spider category to our beverage types
+function normalizeBeverageType(category: string | undefined): string {
+  if (!category) return "beer";
+  
+  const lowerCategory = category.toLowerCase();
+  
+  // Wine detection
+  if (lowerCategory.includes("wine") || lowerCategory.includes("champagne") || 
+      lowerCategory.includes("prosecco") || lowerCategory.includes("merlot") ||
+      lowerCategory.includes("cabernet") || lowerCategory.includes("chardonnay")) {
+    return "wine";
+  }
+  
+  // Liquor/spirits detection
+  if (lowerCategory.includes("whiskey") || lowerCategory.includes("whisky") ||
+      lowerCategory.includes("bourbon") || lowerCategory.includes("vodka") ||
+      lowerCategory.includes("gin") || lowerCategory.includes("rum") ||
+      lowerCategory.includes("tequila") || lowerCategory.includes("brandy") ||
+      lowerCategory.includes("liquor") || lowerCategory.includes("spirit") ||
+      lowerCategory.includes("scotch") || lowerCategory.includes("cognac")) {
+    return "liquor";
+  }
+  
+  // Cider detection
+  if (lowerCategory.includes("cider")) {
+    return "cider";
+  }
+  
+  // Non-alcoholic / Seltzer detection
+  if (lowerCategory.includes("seltzer") || lowerCategory.includes("non-alcoholic") ||
+      lowerCategory.includes("non alcoholic") || lowerCategory.includes("n/a") ||
+      lowerCategory.includes("soda") || lowerCategory.includes("water") ||
+      lowerCategory.includes("juice") || lowerCategory.includes("soft drink")) {
+    return "na";
+  }
+  
+  // Beer detection (default for most alcoholic beverages)
+  if (lowerCategory.includes("beer") || lowerCategory.includes("ale") ||
+      lowerCategory.includes("lager") || lowerCategory.includes("stout") ||
+      lowerCategory.includes("ipa") || lowerCategory.includes("pilsner") ||
+      lowerCategory.includes("porter") || lowerCategory.includes("malt")) {
+    return "beer";
+  }
+  
+  // Default to beer for unknown categories
+  return "beer";
+}
+
 export default function ReceivingPage() {
   const { user, isAuthenticated, isLoading: authLoading } = useAuth();
   const [, setLocation] = useLocation();
@@ -58,6 +106,10 @@ export default function ReceivingPage() {
   const [newProductLabelUrl, setNewProductLabelUrl] = useState("");
   const [newProductUntappdId, setNewProductUntappdId] = useState<number | null>(null);
   const [newProductRating, setNewProductRating] = useState<number | null>(null);
+  
+  // Manufacturer and beverage type from Barcode Spider
+  const [newProductManufacturer, setNewProductManufacturer] = useState("");
+  const [newProductBeverageType, setNewProductBeverageType] = useState<string>("beer");
 
   useEffect(() => {
     if (!authLoading && !isAuthenticated) {
@@ -123,6 +175,9 @@ export default function ReceivingPage() {
       untappdId?: number | null;
       untappdRating?: number | null;
       isSoldByVolume?: boolean;
+      manufacturer?: string;
+      beverageType?: string;
+      skipDuplicateCheck?: boolean;
     }) => {
       const res = await apiRequest("POST", "/api/products", data);
       return res.json();
@@ -166,10 +221,13 @@ export default function ReceivingPage() {
     setNewProductRating(beer.rating);
     setIsKeg(true); // Beer from Untappd is typically a keg
     setShowUntappdSearch(false);
+    // Set manufacturer from brewery and beverageType to beer
+    setNewProductManufacturer(beer.breweryName || "");
+    setNewProductBeverageType("beer");
     
     toast({
       title: "Beer Selected",
-      description: `${beer.name} details auto-filled`,
+      description: `${beer.name}${beer.breweryName ? ` by ${beer.breweryName}` : ""} details auto-filled`,
     });
   };
 
@@ -199,9 +257,24 @@ export default function ReceivingPage() {
             if (barcodeData && barcodeData.title) {
               // Pre-fill form with Barcode Spider data
               setNewProductName(barcodeData.title);
+              
+              // Map brand to manufacturer
+              if (barcodeData.brand) {
+                setNewProductManufacturer(barcodeData.brand);
+              }
+              
+              // Map category to beverageType
+              const beverageType = normalizeBeverageType(barcodeData.category);
+              setNewProductBeverageType(beverageType);
+              
+              // Also use description if available
+              if (barcodeData.description) {
+                setNewProductDescription(barcodeData.description);
+              }
+              
               toast({
                 title: "Product Found",
-                description: `Found: ${barcodeData.title}`,
+                description: `Found: ${barcodeData.title}${barcodeData.brand ? ` by ${barcodeData.brand}` : ""}`,
               });
             } else {
               toast({
@@ -274,6 +347,9 @@ export default function ReceivingPage() {
       untappdId: newProductUntappdId,
       untappdRating: newProductRating,
       isSoldByVolume: isKeg,
+      manufacturer: newProductManufacturer || undefined,
+      beverageType: newProductBeverageType,
+      skipDuplicateCheck: true, // Skip since we're creating from barcode lookup
     });
   };
 
@@ -296,6 +372,9 @@ export default function ReceivingPage() {
     setNewProductRating(null);
     setUntappdResults([]);
     setUntappdSearchQuery("");
+    // Reset Barcode Spider fields
+    setNewProductManufacturer("");
+    setNewProductBeverageType("beer");
   };
 
   if (authLoading) {
