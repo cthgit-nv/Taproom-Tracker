@@ -502,10 +502,17 @@ async function seedInitialData() {
     const existingUsers = await storage.getAllUsers();
     
     if (existingUsers.length === 0) {
-      // Create default admin user with PIN 1234
+      // Create default owner user with PIN 1234 (Super Admin)
+      await storage.createUser({
+        name: "Owner",
+        pinCode: "1234",
+        role: "owner",
+      });
+      
+      // Create default admin user with PIN 0000 (GM)
       await storage.createUser({
         name: "Admin",
-        pinCode: "1234",
+        pinCode: "0000",
         role: "admin",
       });
       
@@ -516,7 +523,7 @@ async function seedInitialData() {
         role: "staff",
       });
       
-      console.log("Seeded default users: Admin (PIN: 1234), Staff (PIN: 5678)");
+      console.log("Seeded default users: Owner (PIN: 1234), Admin (PIN: 0000), Staff (PIN: 5678)");
     }
 
     // Check if settings exist

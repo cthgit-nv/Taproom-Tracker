@@ -7,12 +7,13 @@ import { z } from "zod";
 // TABLE DEFINITIONS (All tables first)
 // ==========================================
 
-// Users table - staff and admin authentication via PIN
+// Users table - staff, admin, and owner authentication via PIN
+// Roles: owner (super admin), admin (GM), staff (regular operations)
 export const users = pgTable("users", {
   id: integer("id").primaryKey().generatedAlwaysAsIdentity(),
   name: text("name").notNull(),
   pinCode: varchar("pin_code", { length: 4 }).notNull().unique(),
-  role: text("role", { enum: ["admin", "staff"] }).notNull().default("staff"),
+  role: text("role", { enum: ["owner", "admin", "staff"] }).notNull().default("staff"),
 });
 
 // Settings table - system configuration
