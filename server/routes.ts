@@ -249,6 +249,17 @@ export async function registerRoutes(
     }
   });
 
+  // Get all inventory sessions (for dashboard)
+  app.get("/api/inventory/sessions/all", async (_req: Request, res: Response) => {
+    try {
+      const sessions = await storage.getAllInventorySessions();
+      return res.json(sessions);
+    } catch (error) {
+      console.error("Get all sessions error:", error);
+      return res.status(500).json({ error: "Internal server error" });
+    }
+  });
+
   // Get session by ID with counts
   app.get("/api/inventory/sessions/:id", async (req: Request, res: Response) => {
     try {

@@ -163,7 +163,7 @@ export default function DashboardPage() {
         <section>
           <h2 className="text-lg font-semibold text-white mb-4">Quick Actions</h2>
           <div className="space-y-3">
-            <Link href="/inventory">
+            <Link href="/inventory-dashboard">
               <Card 
                 className="bg-[#0a2419] border-2 border-[#1A4D2E] hover-elevate active-elevate-2 cursor-pointer overflow-visible"
                 data-testid="card-inventory-session"
@@ -173,8 +173,8 @@ export default function DashboardPage() {
                     <ClipboardList className="w-6 h-6 text-[#D4AF37]" />
                   </div>
                   <div className="flex-1">
-                    <p className="font-medium text-white">Start Count</p>
-                    <p className="text-sm text-white/60">Begin inventory session</p>
+                    <p className="font-medium text-white">Inventory</p>
+                    <p className="text-sm text-white/60">Count zones and track history</p>
                   </div>
                 </CardContent>
               </Card>
@@ -228,7 +228,7 @@ export default function DashboardPage() {
       <nav className="fixed bottom-0 left-0 right-0 bg-[#0a2419] border-t border-[#1A4D2E] px-2 py-2 safe-area-pb">
         <div className="flex items-center justify-around">
           <NavItem icon={Home} label="Dashboard" active />
-          <NavItem icon={Package} label="Inventory" />
+          <NavItem icon={Package} label="Inventory" href="/inventory-dashboard" />
           <NavItem icon={Beer} label="Kegs" />
           <NavItem icon={ShoppingCart} label="Orders" />
           <NavItem icon={Settings} label="Settings" />
@@ -241,14 +241,16 @@ export default function DashboardPage() {
 function NavItem({ 
   icon: Icon, 
   label, 
-  active = false 
+  active = false,
+  href
 }: { 
   icon: typeof Home; 
   label: string; 
   active?: boolean;
+  href?: string;
 }) {
-  return (
-    <button
+  const content = (
+    <div
       className={`
         flex flex-col items-center gap-1 px-3 py-2 rounded-lg min-w-[64px]
         transition-colors duration-150
@@ -264,6 +266,12 @@ function NavItem({
       {active && (
         <div className="w-1 h-1 rounded-full bg-[#D4AF37] mt-0.5" />
       )}
-    </button>
+    </div>
   );
+  
+  if (href) {
+    return <Link href={href}>{content}</Link>;
+  }
+  
+  return <button>{content}</button>;
 }

@@ -7,6 +7,7 @@ import { AuthProvider } from "@/lib/auth-context";
 import LoginPage from "@/pages/login";
 import DashboardPage from "@/pages/dashboard";
 import InventorySessionPage from "@/pages/inventory-session";
+import InventoryDashboardPage from "@/pages/inventory-dashboard";
 import ReceivingPage from "@/pages/receiving";
 import NotFound from "@/pages/not-found";
 
@@ -16,6 +17,7 @@ function Router() {
       <Route path="/" component={LoginPage} />
       <Route path="/dashboard" component={DashboardPage} />
       <Route path="/inventory" component={InventorySessionPage} />
+      <Route path="/inventory-dashboard" component={InventoryDashboardPage} />
       <Route path="/receiving" component={ReceivingPage} />
       <Route component={NotFound} />
     </Switch>

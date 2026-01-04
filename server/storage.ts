@@ -58,6 +58,7 @@ export interface IStorage {
   // Inventory Sessions
   getInventorySession(id: number): Promise<InventorySession | undefined>;
   getActiveSession(userId: number): Promise<InventorySession | undefined>;
+  getAllInventorySessions(): Promise<InventorySession[]>;
   createInventorySession(session: InsertInventorySession): Promise<InventorySession>;
   updateInventorySession(id: number, session: Partial<InsertInventorySession>): Promise<InventorySession | undefined>;
   
@@ -216,6 +217,10 @@ export class DatabaseStorage implements IStorage {
     const [result] = await db.select().from(inventorySessions)
       .where(and(eq(inventorySessions.userId, userId), eq(inventorySessions.status, "in_progress")));
     return result || undefined;
+  }
+
+  async getAllInventorySessions(): Promise<InventorySession[]> {
+    return db.select().from(inventorySessions);
   }
 
   async createInventorySession(insertSession: InsertInventorySession): Promise<InventorySession> {
