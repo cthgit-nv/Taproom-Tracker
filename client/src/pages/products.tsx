@@ -50,6 +50,24 @@ const BEVERAGE_TYPES: { value: BeverageType; label: string }[] = [
   { value: "kombucha", label: "Kombucha" },
 ];
 
+const SPIRIT_STYLES = [
+  "Whiskey", "Bourbon", "Scotch", "Rye", "Irish Whiskey",
+  "Vodka", "Gin", "Rum", "Tequila", "Mezcal",
+  "Brandy", "Cognac", "Liqueur", "Vermouth", "Amaro",
+  "Bitters", "Absinthe", "Other",
+];
+
+const WINE_STYLES = [
+  "Red", "White", "Rose", "Sparkling", "Champagne",
+  "Port", "Sherry", "Vermouth", "Other",
+];
+
+const BEER_STYLES = [
+  "IPA", "Pale Ale", "Lager", "Pilsner", "Stout", "Porter",
+  "Wheat", "Sour", "Amber", "Brown Ale", "Belgian", "Saison",
+  "Kolsch", "Hefeweizen", "Blonde Ale", "Other",
+];
+
 export default function ProductsPage() {
   const { user, isAuthenticated, isLoading: authLoading } = useAuth();
   const [, setLocation] = useLocation();
@@ -341,6 +359,90 @@ export default function ProductsPage() {
   );
 }
 
+interface StyleEditorProps {
+  beverageType: string;
+  style: string;
+  onChange: (style: string) => void;
+}
+
+function StyleEditor({ beverageType, style, onChange }: StyleEditorProps) {
+  const [forceDropdown, setForceDropdown] = useState(false);
+  const [forceCustom, setForceCustom] = useState(false);
+  
+  const styleOptions = beverageType === "spirits" ? SPIRIT_STYLES : 
+                       beverageType === "wine" ? WINE_STYLES : 
+                       beverageType === "beer" ? BEER_STYLES : [];
+  
+  const hasPresetOptions = styleOptions.length > 0;
+  const isPresetStyle = styleOptions.includes(style);
+  
+  const showTextInput = !hasPresetOptions || forceCustom || (!forceDropdown && style && !isPresetStyle);
+  
+  if (showTextInput) {
+    return (
+      <div className="space-y-1">
+        <Label className="text-white/60 text-xs">Style</Label>
+        <div className="flex gap-2">
+          <Input
+            value={style}
+            onChange={(e) => onChange(e.target.value)}
+            placeholder="e.g., IPA, Lager, Amber"
+            className="bg-[#051a11] border-[#1A4D2E] text-white flex-1"
+            data-testid="edit-style"
+          />
+          {hasPresetOptions && (
+            <Button
+              variant="outline"
+              size="icon"
+              onClick={() => {
+                setForceCustom(false);
+                setForceDropdown(true);
+              }}
+              className="border-[#1A4D2E] text-white/60"
+            >
+              <ChevronDown className="w-4 h-4" />
+            </Button>
+          )}
+        </div>
+      </div>
+    );
+  }
+  
+  const allOptions = style && !isPresetStyle 
+    ? [style, ...styleOptions] 
+    : styleOptions;
+  
+  return (
+    <div className="space-y-1">
+      <Label className="text-white/60 text-xs">Style</Label>
+      <Select
+        value={style || "_custom"}
+        onValueChange={(v) => {
+          if (v === "_custom") {
+            setForceCustom(true);
+            setForceDropdown(false);
+          } else {
+            setForceDropdown(false);
+            onChange(v);
+          }
+        }}
+      >
+        <SelectTrigger className="bg-[#051a11] border-[#1A4D2E] text-white" data-testid="edit-style">
+          <SelectValue placeholder="Select style" />
+        </SelectTrigger>
+        <SelectContent className="bg-[#0a2419] border-[#1A4D2E] max-h-60">
+          <SelectItem value="_custom" className="text-white/60">Enter custom...</SelectItem>
+          {allOptions.map(s => (
+            <SelectItem key={s} value={s} className="text-white">
+              {s}
+            </SelectItem>
+          ))}
+        </SelectContent>
+      </Select>
+    </div>
+  );
+}
+
 interface ProductCardProps {
   product: Product;
   distributors: Distributor[];
@@ -463,16 +565,11 @@ function ProductCard({ product, distributors, isExpanded, onToggle, onUpdate, is
                 </Select>
               </div>
 
-              <div className="space-y-1">
-                <Label className="text-white/60 text-xs">Style</Label>
-                <Input
-                  value={editState.style}
-                  onChange={(e) => setEditState({ ...editState, style: e.target.value })}
-                  placeholder="e.g., IPA, Lager, Amber"
-                  className="bg-[#051a11] border-[#1A4D2E] text-white"
-                  data-testid="edit-style"
-                />
-              </div>
+              <StyleEditor 
+                beverageType={editState.beverageType}
+                style={editState.style}
+                onChange={(style) => setEditState({ ...editState, style })}
+              />
 
               <div className="space-y-1">
                 <Label className="text-white/60 text-xs">Brand</Label>
