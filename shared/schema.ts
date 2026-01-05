@@ -29,9 +29,12 @@ export const settings = pgTable("settings", {
   gotabLocId: text("gotab_loc_id"),
   gotabKey: text("gotab_key"),
   gotabSecret: text("gotab_secret"),
+  untappdEmail: text("untappd_email"),
+  untappdLocationId: text("untappd_location_id"),
   untappdReadToken: text("untappd_read_token"),
   untappdWriteToken: text("untappd_write_token"),
   untappdMenuId: text("untappd_menu_id"),
+  barcodespiderToken: text("barcodespider_token"),
   // Smart Order score formula coefficients (admin editable)
   scoreVelocityWeight: real("score_velocity_weight").notNull().default(0.4),
   scoreRatingWeight: real("score_rating_weight").notNull().default(0.3),
