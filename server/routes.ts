@@ -2,7 +2,7 @@ import type { Express, Request, Response } from "express";
 import { createServer, type Server } from "http";
 import session from "express-session";
 import { storage } from "./storage";
-import { pinLoginSchema, insertProductSchema, updateProductSchema } from "@shared/schema";
+import { pinLoginSchema, insertProductSchema, updateProductSchema, insertPricingDefaultSchema } from "@shared/schema";
 import { z } from "zod";
 import { fetchDailySales, fetchProductCatalog, isGoTabConfigured, type GoTabSalesResult, type GoTabProduct } from "./gotab";
 import { isUntappdConfigured, previewTapList, fetchFullTapList, type UntappdMenuItem } from "./untappd";
@@ -154,13 +154,11 @@ export async function registerRoutes(
       return res.status(403).json({ error: "Admin access required" });
     }
     try {
-      const { beverageType, pricingMode, targetPourCost, defaultServingSizeOz } = req.body;
-      const result = await storage.upsertPricingDefault({
-        beverageType,
-        pricingMode,
-        targetPourCost,
-        defaultServingSizeOz,
-      });
+      const parsed = insertPricingDefaultSchema.safeParse(req.body);
+      if (!parsed.success) {
+        return res.status(400).json({ error: "Invalid pricing default data", details: parsed.error.errors });
+      }
+      const result = await storage.upsertPricingDefault(parsed.data);
       return res.json(result);
     } catch (error) {
       console.error("Upsert pricing default error:", error);
