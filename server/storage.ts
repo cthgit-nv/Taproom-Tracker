@@ -1,6 +1,6 @@
 import { 
   users, settings, distributors, products, kegs, taps, zones, inventorySessions, inventoryCounts, receivingLogs,
-  reorderFlags, orders, orderItems,
+  reorderFlags, orders, orderItems, pricingDefaults,
   type User, type InsertUser,
   type Settings, type InsertSettings,
   type Distributor, type InsertDistributor,
@@ -13,7 +13,8 @@ import {
   type ReceivingLog, type InsertReceivingLog,
   type ReorderFlag, type InsertReorderFlag,
   type Order, type InsertOrder,
-  type OrderItem, type InsertOrderItem
+  type OrderItem, type InsertOrderItem,
+  type PricingDefault, type InsertPricingDefault
 } from "@shared/schema";
 import { db } from "./db";
 import { eq, and, isNull, isNotNull, desc } from "drizzle-orm";
@@ -99,6 +100,11 @@ export interface IStorage {
   getOrderItems(orderId: number): Promise<OrderItem[]>;
   updateOrderItem(id: number, item: Partial<InsertOrderItem>): Promise<OrderItem | undefined>;
   deleteOrderItem(id: number): Promise<void>;
+  
+  // Pricing Defaults
+  getAllPricingDefaults(): Promise<PricingDefault[]>;
+  getPricingDefault(beverageType: string, pricingMode: string): Promise<PricingDefault | undefined>;
+  upsertPricingDefault(data: InsertPricingDefault): Promise<PricingDefault>;
 }
 
 export class DatabaseStorage implements IStorage {
@@ -393,6 +399,34 @@ export class DatabaseStorage implements IStorage {
 
   async deleteOrderItem(id: number): Promise<void> {
     await db.delete(orderItems).where(eq(orderItems.id, id));
+  }
+
+  // Pricing Defaults
+  async getAllPricingDefaults(): Promise<PricingDefault[]> {
+    return db.select().from(pricingDefaults);
+  }
+
+  async getPricingDefault(beverageType: string, pricingMode: string): Promise<PricingDefault | undefined> {
+    const [result] = await db.select().from(pricingDefaults)
+      .where(and(
+        eq(pricingDefaults.beverageType, beverageType as any),
+        eq(pricingDefaults.pricingMode, pricingMode as any)
+      ));
+    return result || undefined;
+  }
+
+  async upsertPricingDefault(data: InsertPricingDefault): Promise<PricingDefault> {
+    const existing = await this.getPricingDefault(data.beverageType, data.pricingMode);
+    if (existing) {
+      const [result] = await db.update(pricingDefaults)
+        .set(data)
+        .where(eq(pricingDefaults.id, existing.id))
+        .returning();
+      return result;
+    } else {
+      const [result] = await db.insert(pricingDefaults).values(data).returning();
+      return result;
+    }
   }
 }
 

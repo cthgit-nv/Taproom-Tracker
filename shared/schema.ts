@@ -39,6 +39,14 @@ export const settings = pgTable("settings", {
   scoreProfitWeight: real("score_profit_weight").notNull().default(0.1),
 });
 
+// Pricing mode enum - determines how a product is sold
+// draft_per_oz: kegs poured by the ounce
+// package_unit: cans/bottles sold as-is (fixed size)
+// bottle_pour: wine bottles sold by bottle OR by glass
+// spirit_pour: spirits sold by shot
+export const pricingModeEnum = ["draft_per_oz", "package_unit", "bottle_pour", "spirit_pour"] as const;
+export type PricingMode = typeof pricingModeEnum[number];
+
 // Distributors table
 export const distributors = pgTable("distributors", {
   id: integer("id").primaryKey().generatedAlwaysAsIdentity(),
@@ -54,6 +62,15 @@ export const distributors = pgTable("distributors", {
 export const beverageTypeEnum = ["beer", "cider", "wine", "spirits", "na", "kombucha"] as const;
 export type BeverageType = typeof beverageTypeEnum[number];
 
+// Pricing Defaults table - admin-configurable target margins by beverage type
+export const pricingDefaults = pgTable("pricing_defaults", {
+  id: integer("id").primaryKey().generatedAlwaysAsIdentity(),
+  beverageType: text("beverage_type", { enum: beverageTypeEnum }).notNull(),
+  pricingMode: text("pricing_mode", { enum: pricingModeEnum }).notNull(),
+  targetPourCost: real("target_pour_cost").notNull().default(0.22),
+  defaultServingSizeOz: real("default_serving_size_oz"),
+});
+
 // Products table - inventory items
 export const products = pgTable("products", {
   id: integer("id").primaryKey().generatedAlwaysAsIdentity(),
@@ -63,6 +80,9 @@ export const products = pgTable("products", {
   plu: integer("plu").unique(),
   costPerUnit: decimal("cost_per_unit", { precision: 10, scale: 2 }),
   pricePerUnit: decimal("price_per_unit", { precision: 10, scale: 2 }),
+  pricingMode: text("pricing_mode", { enum: pricingModeEnum }),
+  servingSizeOz: real("serving_size_oz"),
+  targetPourCost: real("target_pour_cost"),
   isSoldByVolume: boolean("is_sold_by_volume").default(false),
   bottleSizeMl: integer("bottle_size_ml"),
   emptyWeightGrams: integer("empty_weight_grams"),
@@ -90,6 +110,7 @@ export const products = pgTable("products", {
 // Kegs table - individual keg tracking
 // Status: on_deck = Back Inventory (full kegs waiting), tapped = linked to PMB/tap, kicked = empty
 // isSimulation: separates training data from production inventory
+// pricePerOz and targetPourCost can override product defaults when tapped
 export const kegs = pgTable("kegs", {
   id: integer("id").primaryKey().generatedAlwaysAsIdentity(),
   productId: integer("product_id").references(() => products.id).notNull(),
@@ -101,6 +122,9 @@ export const kegs = pgTable("kegs", {
   dateTapped: timestamp("date_tapped"),
   dateKicked: timestamp("date_kicked"),
   isSimulation: boolean("is_simulation").notNull().default(false),
+  pricePerOz: decimal("price_per_oz", { precision: 10, scale: 4 }),
+  costPerOz: decimal("cost_per_oz", { precision: 10, scale: 4 }),
+  targetPourCost: real("target_pour_cost"),
 });
 
 // Taps table - physical tap assignments
@@ -341,6 +365,7 @@ export const insertReceivingLogSchema = createInsertSchema(receivingLogs).omit({
 export const insertReorderFlagSchema = createInsertSchema(reorderFlags).omit({ id: true, createdAt: true });
 export const insertOrderSchema = createInsertSchema(orders).omit({ id: true, createdAt: true });
 export const insertOrderItemSchema = createInsertSchema(orderItems).omit({ id: true });
+export const insertPricingDefaultSchema = createInsertSchema(pricingDefaults).omit({ id: true });
 
 // ==========================================
 // TYPES
@@ -385,6 +410,9 @@ export type Order = typeof orders.$inferSelect;
 export type InsertOrderItem = z.infer<typeof insertOrderItemSchema>;
 export type OrderItem = typeof orderItems.$inferSelect;
 
+export type InsertPricingDefault = z.infer<typeof insertPricingDefaultSchema>;
+export type PricingDefault = typeof pricingDefaults.$inferSelect;
+
 // ==========================================
 // VALIDATION SCHEMAS
 // ==========================================
@@ -405,6 +433,9 @@ export const updateProductSchema = z.object({
   style: z.string().nullable().optional(),
   costPerUnit: z.string().nullable().optional(),
   pricePerUnit: z.string().nullable().optional(),
+  pricingMode: z.enum(pricingModeEnum).nullable().optional(),
+  servingSizeOz: z.number().nullable().optional(),
+  targetPourCost: z.number().nullable().optional(),
   parLevel: z.number().nullable().optional(),
   upc: z.string().nullable().optional(),
   bottleSizeMl: z.number().nullable().optional(),
