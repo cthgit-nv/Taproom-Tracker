@@ -324,12 +324,14 @@ export default function ReceivingPage() {
           const barcodeRes = await fetch(`/api/barcodespider/lookup/${upc}`);
           if (barcodeRes.ok) {
             const barcodeData = await barcodeRes.json();
+            console.log("Barcode Spider response:", barcodeData);
             if (barcodeData && barcodeData.title) {
               // Pre-fill form with Barcode Spider data
               setNewProductName(barcodeData.title);
               
               // Map brand from Barcode Spider - prefer brand, fallback to manufacturer
               const brandValue = barcodeData.brand || barcodeData.manufacturer || "";
+              console.log("Brand from Barcode Spider:", brandValue, "| brand:", barcodeData.brand, "| manufacturer:", barcodeData.manufacturer);
               if (brandValue) {
                 setNewProductBrand(brandValue);
               }
@@ -432,7 +434,7 @@ export default function ReceivingPage() {
   const handleCreateProduct = () => {
     if (!newProductName || !scannedUpc) return;
     
-    createProductMutation.mutate({
+    const productPayload = {
       name: newProductName,
       upc: scannedUpc,
       distributorId: newProductDistributor,
@@ -447,7 +449,9 @@ export default function ReceivingPage() {
       brand: newProductBrand || undefined,
       beverageType: newProductBeverageType,
       skipDuplicateCheck: true, // Skip since we're creating from barcode lookup
-    });
+    };
+    console.log("Creating product with payload:", productPayload);
+    createProductMutation.mutate(productPayload);
   };
 
   const resetToScanning = () => {
