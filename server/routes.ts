@@ -6,7 +6,8 @@ import { pinLoginSchema, insertProductSchema, updateProductSchema } from "@share
 import { z } from "zod";
 import { fetchDailySales, fetchProductCatalog, isGoTabConfigured, type GoTabSalesResult, type GoTabProduct } from "./gotab";
 import { isUntappdConfigured, previewTapList, fetchFullTapList, type UntappdMenuItem } from "./untappd";
-import { isBarcodeSpiderConfigured, lookupUpc, getApiStatus as getBarcodeSpiderStatus } from "./barcodespider";
+import { isBarcodeSpiderConfigured, getApiStatus as getBarcodeSpiderStatus } from "./barcodespider";
+import { lookupUpc as lookupUpcOrchestrator, getLookupStatus } from "./upcLookup";
 
 // Extend express-session types
 declare module "express-session" {
@@ -633,31 +634,30 @@ export async function registerRoutes(
     }
   });
 
-  // Look up UPC via Barcode Spider (external API)
+  // Look up UPC via multiple sources (Barcode Spider, Open Food Facts, UPCitemdb)
   app.get("/api/barcodespider/lookup/:upc", async (req: Request, res: Response) => {
     try {
       if (!req.session.userId) {
         return res.status(401).json({ error: "Not authenticated" });
       }
       
-      if (!isBarcodeSpiderConfigured()) {
-        return res.status(400).json({ error: "Barcode Spider not configured" });
-      }
-      
-      const result = await lookupUpc(req.params.upc);
+      const result = await lookupUpcOrchestrator(req.params.upc);
       return res.json(result);
     } catch (error) {
-      console.error("Barcode Spider lookup error:", error);
+      console.error("UPC lookup error:", error);
       const message = error instanceof Error ? error.message : "Internal server error";
       return res.status(500).json({ error: message });
     }
   });
 
-  // Check Barcode Spider API status
+  // Check UPC lookup API status (all sources)
   app.get("/api/barcodespider/status", async (req: Request, res: Response) => {
     try {
       const status = getBarcodeSpiderStatus();
-      return res.json(status);
+      return res.json({
+        ...status,
+        sources: getLookupStatus(),
+      });
     } catch (error) {
       return res.status(500).json({ error: "Internal server error" });
     }
@@ -743,11 +743,11 @@ export async function registerRoutes(
           // Add delay between requests to avoid rate limiting
           await new Promise(resolve => setTimeout(resolve, 300));
           
-          const barcodeData = await lookupUpc(product.upc!);
+          const barcodeData = await lookupUpcOrchestrator(product.upc!);
           
           if (barcodeData && barcodeData.title) {
-            const newBeverageType = normalizeBeverageType(barcodeData.category, barcodeData.parentCategory);
-            const newBrand = barcodeData.brand || barcodeData.manufacturer || product.brand;
+            const newBeverageType = normalizeBeverageType(barcodeData.category, undefined);
+            const newBrand = barcodeData.brand || product.brand;
             
             // Only update if there's a change
             if (newBeverageType !== product.beverageType || (newBrand && newBrand !== product.brand)) {
