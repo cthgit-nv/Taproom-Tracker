@@ -937,82 +937,15 @@ export default function InventorySessionPage() {
 
         {/* SCAN MODE */}
         {mode === "scan" && (
-          <div className="space-y-4 pb-24">
-            <div className="flex gap-2 mb-4">
-              <Button
-                variant="outline"
-                onClick={() => setMode("list")}
-                className="flex-1 border-[#1A4D2E] text-white/60"
-                data-testid="button-list-mode-2"
-              >
-                <List className="w-4 h-4 mr-2" />
-                List
-              </Button>
-              <Button
-                variant="outline"
-                onClick={() => setMode("scan")}
-                className="flex-1 border-[#D4AF37] text-[#D4AF37]"
-                data-testid="button-scan-mode-2"
-              >
-                <Camera className="w-4 h-4 mr-2" />
-                Scan
-              </Button>
-            </div>
-
-            {isOffline && (
-              <Card className="bg-orange-500/10 border-2 border-orange-500/50">
-                <CardContent className="p-3 flex items-center gap-2">
-                  <WifiOff className="w-5 h-5 text-orange-400" />
-                  <span className="text-sm text-orange-300">Offline - using cached products</span>
-                </CardContent>
-              </Card>
-            )}
-
-            <Card className="bg-[#0a2419] border-2 border-[#D4AF37] overflow-hidden">
-              <CardContent className="p-0">
-                <div className="aspect-[4/3] bg-black flex items-center justify-center relative">
-                  <div className="absolute inset-0 border-4 border-[#D4AF37]/30 m-8 rounded-lg" />
-                  <div className="text-center text-white/60 z-10">
-                    <Camera className="w-16 h-16 mx-auto mb-2 text-[#D4AF37]" />
-                    <p className="text-[#D4AF37] font-medium">Camera Active</p>
-                    <p className="text-sm">Scan barcode to count</p>
-                  </div>
-                </div>
-              </CardContent>
-            </Card>
-
-            {scaleConnected && (
-              <p className="text-center text-blue-400 text-sm flex items-center justify-center gap-2">
-                <BluetoothConnected className="w-4 h-4" />
-                Scale will auto-weigh on scan
-              </p>
-            )}
-
-            {/* Simulation buttons */}
-            <div className="grid grid-cols-2 gap-2">
-              {displayProducts.slice(0, 6).map((product) => (
-                <Button
-                  key={product.id}
-                  variant="outline"
-                  onClick={() => handleSelectProduct(product)}
-                  className="text-sm border-[#1A4D2E] text-white/80 justify-start"
-                  data-testid={`scan-${product.id}`}
-                >
-                  {product.name.substring(0, 15)}
-                </Button>
-              ))}
-            </div>
-
-            <div className="fixed bottom-0 left-0 right-0 p-4 bg-[#051a11] border-t border-[#1A4D2E]">
-              <Button
-                onClick={handleFinishSession}
-                className="w-full h-14 bg-[#D4AF37] text-[#051a11] text-lg font-semibold"
-                data-testid="button-finish-session-scan"
-              >
-                Finish Session ({counts.size} items counted)
-              </Button>
-            </div>
-          </div>
+          <ScanModeContent
+            displayProducts={displayProducts}
+            handleSelectProduct={handleSelectProduct}
+            handleFinishSession={handleFinishSession}
+            countsSize={counts.size}
+            isOffline={isOffline}
+            scaleConnected={scaleConnected}
+            setMode={setMode}
+          />
         )}
 
         {/* INPUT MODE */}
@@ -1542,6 +1475,392 @@ export default function InventorySessionPage() {
           </div>
         </DialogContent>
       </Dialog>
+    </div>
+  );
+}
+
+interface ScanModeProps {
+  displayProducts: Product[];
+  handleSelectProduct: (product: Product) => void;
+  handleFinishSession: () => void;
+  countsSize: number;
+  isOffline: boolean;
+  scaleConnected: boolean;
+  setMode: (mode: Mode) => void;
+}
+
+function ScanModeContent({
+  displayProducts,
+  handleSelectProduct,
+  handleFinishSession,
+  countsSize,
+  isOffline,
+  scaleConnected,
+  setMode,
+}: ScanModeProps) {
+  const { toast } = useToast();
+  const [searchQuery, setSearchQuery] = useState("");
+  const [isSearching, setIsSearching] = useState(false);
+  const [upcLookupResult, setUpcLookupResult] = useState<{
+    upc: string;
+    title: string;
+    brand?: string;
+    size?: string;
+  } | null>(null);
+  const [showAddProduct, setShowAddProduct] = useState(false);
+  const [newProductName, setNewProductName] = useState("");
+  const [newProductUpc, setNewProductUpc] = useState("");
+  const [newProductSizeMl, setNewProductSizeMl] = useState("750");
+  const [newProductBeverageType, setNewProductBeverageType] = useState("beer");
+  
+  const cleanUpc = (query: string) => query.replace(/[-\s]/g, "");
+  const isUpc = (query: string) => /^\d{8,14}$/.test(cleanUpc(query));
+  
+  const filteredProducts = displayProducts.filter((p) => {
+    const q = searchQuery.toLowerCase();
+    const cleanedSearch = cleanUpc(searchQuery);
+    return (
+      p.name.toLowerCase().includes(q) ||
+      (p.upc && cleanUpc(p.upc).includes(cleanedSearch)) ||
+      (p.brand && p.brand.toLowerCase().includes(q))
+    );
+  });
+  
+  const handleSearch = async () => {
+    if (!searchQuery.trim()) return;
+    
+    const cleanQuery = searchQuery.trim();
+    const normalizedUpc = cleanUpc(cleanQuery);
+    
+    if (isUpc(cleanQuery)) {
+      const existingProduct = displayProducts.find((p) => p.upc && cleanUpc(p.upc) === normalizedUpc);
+      if (existingProduct) {
+        handleSelectProduct(existingProduct);
+        setSearchQuery("");
+        return;
+      }
+      
+      setIsSearching(true);
+      try {
+        const response = await fetch(`/api/barcodespider/lookup/${normalizedUpc}`, {
+          credentials: "include",
+        });
+        if (response.ok) {
+          const data = await response.json();
+          if (data) {
+            setUpcLookupResult(data);
+            setNewProductName(data.title || "");
+            setNewProductUpc(data.upc || cleanQuery);
+            if (data.size) {
+              const mlMatch = data.size.match(/(\d+)\s*ml/i);
+              const ozMatch = data.size.match(/(\d+(?:\.\d+)?)\s*(?:fl\s*)?oz/i);
+              const lMatch = data.size.match(/(\d+(?:\.\d+)?)\s*L/i);
+              if (mlMatch) setNewProductSizeMl(mlMatch[1]);
+              else if (ozMatch) setNewProductSizeMl(String(Math.round(parseFloat(ozMatch[1]) * 29.574)));
+              else if (lMatch) setNewProductSizeMl(String(Math.round(parseFloat(lMatch[1]) * 1000)));
+            }
+            setShowAddProduct(true);
+          } else {
+            setNewProductUpc(cleanQuery);
+            setNewProductName("");
+            setShowAddProduct(true);
+            toast({ title: "UPC not found", description: "Enter product details manually" });
+          }
+        } else {
+          setNewProductUpc(cleanQuery);
+          setNewProductName("");
+          setShowAddProduct(true);
+        }
+      } catch (error) {
+        setNewProductUpc(cleanQuery);
+        setShowAddProduct(true);
+      } finally {
+        setIsSearching(false);
+      }
+    } else {
+      if (filteredProducts.length === 1) {
+        handleSelectProduct(filteredProducts[0]);
+        setSearchQuery("");
+      } else if (filteredProducts.length === 0) {
+        setNewProductName(cleanQuery);
+        setNewProductUpc("");
+        setShowAddProduct(true);
+      }
+    }
+  };
+  
+  const createProductMutation = useMutation({
+    mutationFn: async (data: { name: string; upc?: string; bottleSizeMl: number; beverageType: string }) => {
+      const response = await apiRequest("POST", "/api/products", {
+        ...data,
+        isSoldByVolume: false,
+        parLevel: 2,
+      });
+      return response.json();
+    },
+    onSuccess: (newProduct) => {
+      queryClient.invalidateQueries({ queryKey: ["/api/products"] });
+      toast({ title: "Product created", description: newProduct.name });
+      handleSelectProduct(newProduct);
+      setShowAddProduct(false);
+      setSearchQuery("");
+      setNewProductName("");
+      setNewProductUpc("");
+      setUpcLookupResult(null);
+    },
+    onError: () => {
+      toast({ title: "Error", description: "Failed to create product", variant: "destructive" });
+    },
+  });
+  
+  const handleCreateProduct = () => {
+    if (!newProductName.trim()) {
+      toast({ title: "Error", description: "Product name is required", variant: "destructive" });
+      return;
+    }
+    const normalizedNewUpc = newProductUpc ? cleanUpc(newProductUpc) : undefined;
+    createProductMutation.mutate({
+      name: newProductName.trim(),
+      upc: normalizedNewUpc || undefined,
+      bottleSizeMl: parseInt(newProductSizeMl) || 750,
+      beverageType: newProductBeverageType,
+    });
+  };
+  
+  return (
+    <div className="space-y-4 pb-24">
+      <div className="flex gap-2 mb-4">
+        <Button
+          variant="outline"
+          onClick={() => setMode("list")}
+          className="flex-1 border-[#1A4D2E] text-white/60"
+          data-testid="button-list-mode-2"
+        >
+          <List className="w-4 h-4 mr-2" />
+          List
+        </Button>
+        <Button
+          variant="outline"
+          onClick={() => setMode("scan")}
+          className="flex-1 border-[#D4AF37] text-[#D4AF37]"
+          data-testid="button-scan-mode-2"
+        >
+          <Camera className="w-4 h-4 mr-2" />
+          Scan
+        </Button>
+      </div>
+
+      {isOffline && (
+        <Card className="bg-orange-500/10 border-2 border-orange-500/50">
+          <CardContent className="p-3 flex items-center gap-2">
+            <WifiOff className="w-5 h-5 text-orange-400" />
+            <span className="text-sm text-orange-300">Offline - using cached products</span>
+          </CardContent>
+        </Card>
+      )}
+
+      <Card className="bg-[#0a2419] border-2 border-[#D4AF37]">
+        <CardContent className="p-4 space-y-3">
+          <Label className="text-[#D4AF37] font-medium">Scan or Search Product</Label>
+          <div className="flex gap-2">
+            <Input
+              type="text"
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              onKeyDown={(e) => e.key === "Enter" && handleSearch()}
+              placeholder="Type UPC or product name..."
+              className="flex-1 bg-[#051a11] border-[#1A4D2E] text-white h-12 text-lg"
+              autoFocus
+              data-testid="input-scan-search"
+            />
+            <Button
+              onClick={handleSearch}
+              disabled={isSearching || !searchQuery.trim()}
+              className="h-12 px-6 bg-[#D4AF37] text-[#051a11]"
+              data-testid="button-search-product"
+            >
+              {isSearching ? <Loader2 className="w-5 h-5 animate-spin" /> : <Camera className="w-5 h-5" />}
+            </Button>
+          </div>
+          <p className="text-xs text-white/40">Enter UPC barcode or start typing product name</p>
+        </CardContent>
+      </Card>
+
+      {scaleConnected && (
+        <p className="text-center text-blue-400 text-sm flex items-center justify-center gap-2">
+          <BluetoothConnected className="w-4 h-4" />
+          Scale will auto-weigh on scan
+        </p>
+      )}
+
+      {searchQuery && filteredProducts.length > 0 && (
+        <div className="space-y-2">
+          <p className="text-sm text-white/60">Matching products:</p>
+          {filteredProducts.slice(0, 8).map((product) => (
+            <Card
+              key={product.id}
+              className="bg-[#0a2419] border-[#1A4D2E] hover-elevate cursor-pointer"
+              onClick={() => {
+                handleSelectProduct(product);
+                setSearchQuery("");
+              }}
+              data-testid={`search-result-${product.id}`}
+            >
+              <CardContent className="p-3 flex items-center gap-3">
+                <div className="w-10 h-10 rounded bg-[#1A4D2E] flex items-center justify-center flex-shrink-0">
+                  {product.isSoldByVolume ? (
+                    <Beer className="w-5 h-5 text-[#D4AF37]" />
+                  ) : (
+                    <Package className="w-5 h-5 text-[#D4AF37]" />
+                  )}
+                </div>
+                <div className="flex-1 min-w-0">
+                  <p className="text-white font-medium truncate">{product.name}</p>
+                  <p className="text-xs text-white/40">
+                    {product.upc || "No UPC"} {product.bottleSizeMl ? `- ${product.bottleSizeMl}ml` : ""}
+                  </p>
+                </div>
+                <Badge variant="outline" className="text-xs border-[#1A4D2E] text-white/60 flex-shrink-0">
+                  {product.isSoldByVolume ? "Keg" : "Bottle"}
+                </Badge>
+              </CardContent>
+            </Card>
+          ))}
+          {filteredProducts.length > 8 && (
+            <p className="text-center text-xs text-white/40">
+              +{filteredProducts.length - 8} more results
+            </p>
+          )}
+        </div>
+      )}
+
+      {searchQuery && filteredProducts.length === 0 && !isSearching && (
+        <Card
+          className="bg-[#0a2419] border-[#1A4D2E] border-dashed hover-elevate cursor-pointer"
+          onClick={() => {
+            if (isUpc(searchQuery)) {
+              handleSearch();
+            } else {
+              setNewProductName(searchQuery);
+              setNewProductUpc("");
+              setShowAddProduct(true);
+            }
+          }}
+          data-testid="button-add-new-product"
+        >
+          <CardContent className="p-4 flex items-center gap-3">
+            <div className="w-10 h-10 rounded bg-[#D4AF37]/20 flex items-center justify-center">
+              <Plus className="w-5 h-5 text-[#D4AF37]" />
+            </div>
+            <div>
+              <p className="text-[#D4AF37] font-medium">Add New Product</p>
+              <p className="text-xs text-white/40">
+                {isUpc(searchQuery) ? "Look up UPC and create product" : `Create "${searchQuery}"`}
+              </p>
+            </div>
+          </CardContent>
+        </Card>
+      )}
+
+      <Dialog open={showAddProduct} onOpenChange={setShowAddProduct}>
+        <DialogContent className="bg-[#0a2419] border-[#1A4D2E] text-white max-w-md">
+          <DialogHeader>
+            <DialogTitle className="text-[#D4AF37]">Add New Product</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4 py-2">
+            {upcLookupResult && (
+              <Card className="bg-[#051a11] border-[#1A4D2E]">
+                <CardContent className="p-3">
+                  <p className="text-xs text-white/40 mb-1">Found via UPC lookup:</p>
+                  <p className="text-white font-medium">{upcLookupResult.title}</p>
+                  {upcLookupResult.brand && (
+                    <p className="text-sm text-white/60">{upcLookupResult.brand}</p>
+                  )}
+                </CardContent>
+              </Card>
+            )}
+            <div className="space-y-2">
+              <Label className="text-white">Product Name *</Label>
+              <Input
+                value={newProductName}
+                onChange={(e) => setNewProductName(e.target.value)}
+                placeholder="e.g., Sierra Nevada Pale Ale"
+                className="bg-[#051a11] border-[#1A4D2E] text-white"
+                data-testid="input-new-product-name"
+              />
+            </div>
+            <div className="space-y-2">
+              <Label className="text-white">UPC Code</Label>
+              <Input
+                value={newProductUpc}
+                onChange={(e) => setNewProductUpc(e.target.value)}
+                placeholder="12-digit barcode"
+                className="bg-[#051a11] border-[#1A4D2E] text-white"
+                data-testid="input-new-product-upc"
+              />
+            </div>
+            <div className="grid grid-cols-2 gap-3">
+              <div className="space-y-2">
+                <Label className="text-white">Size (ml)</Label>
+                <Input
+                  type="number"
+                  value={newProductSizeMl}
+                  onChange={(e) => setNewProductSizeMl(e.target.value)}
+                  placeholder="750"
+                  className="bg-[#051a11] border-[#1A4D2E] text-white"
+                  data-testid="input-new-product-size"
+                />
+              </div>
+              <div className="space-y-2">
+                <Label className="text-white">Type</Label>
+                <select
+                  value={newProductBeverageType}
+                  onChange={(e) => setNewProductBeverageType(e.target.value)}
+                  className="w-full h-9 rounded-md bg-[#051a11] border border-[#1A4D2E] text-white px-3"
+                  data-testid="select-new-product-type"
+                >
+                  <option value="beer">Beer</option>
+                  <option value="cider">Cider</option>
+                  <option value="wine">Wine</option>
+                  <option value="spirits">Spirits</option>
+                  <option value="na">N/A</option>
+                  <option value="kombucha">Kombucha</option>
+                </select>
+              </div>
+            </div>
+            <div className="flex gap-2 pt-2">
+              <Button
+                variant="outline"
+                onClick={() => {
+                  setShowAddProduct(false);
+                  setUpcLookupResult(null);
+                }}
+                className="flex-1 border-[#1A4D2E] text-white/60"
+              >
+                Cancel
+              </Button>
+              <Button
+                onClick={handleCreateProduct}
+                disabled={createProductMutation.isPending || !newProductName.trim()}
+                className="flex-1 bg-[#D4AF37] text-[#051a11]"
+                data-testid="button-create-product"
+              >
+                {createProductMutation.isPending ? "Creating..." : "Create & Count"}
+              </Button>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      <div className="fixed bottom-0 left-0 right-0 p-4 bg-[#051a11] border-t border-[#1A4D2E]">
+        <Button
+          onClick={handleFinishSession}
+          className="w-full h-14 bg-[#D4AF37] text-[#051a11] text-lg font-semibold"
+          data-testid="button-finish-session-scan"
+        >
+          Finish Session ({countsSize} items counted)
+        </Button>
+      </div>
     </div>
   );
 }
