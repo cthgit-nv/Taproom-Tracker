@@ -9,6 +9,13 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { 
   ArrowLeft, 
   Camera, 
@@ -29,28 +36,52 @@ type Mode = "scanning" | "known_product" | "new_product";
 
 // Helper to normalize Barcode Spider category to our beverage types
 // Uses both category and parentCategory for better detection
+// PRIORITY: Check parentCategory first as it's more reliable for categorization
 function normalizeBeverageType(category: string | undefined, parentCategory?: string): string {
   const categoryStr = (category || "").toLowerCase();
   const parentStr = (parentCategory || "").toLowerCase();
+  
+  // PRIORITY 1: Check parentCategory first - it's the most reliable indicator
+  // Barcode Spider often has "Wines & Spirits" as parent for all liquor/spirits
+  if (parentStr.includes("spirit") || parentStr.includes("liquor")) {
+    // But still check if it's specifically wine within "Wines & Spirits"
+    if (categoryStr.includes("wine") || categoryStr.includes("champagne") || 
+        categoryStr.includes("prosecco") || categoryStr.includes("vermouth")) {
+      return "wine";
+    }
+    return "spirits";
+  }
+  
+  if (parentStr.includes("wine")) {
+    return "wine";
+  }
+  
+  if (parentStr.includes("beer") || parentStr.includes("brew")) {
+    return "beer";
+  }
+  
+  // PRIORITY 2: Check specific category keywords
   const combined = `${categoryStr} ${parentStr}`;
+  
+  // Spirits detection - check category for spirit-specific terms
+  if (categoryStr.includes("whiskey") || categoryStr.includes("whisky") ||
+      categoryStr.includes("bourbon") || categoryStr.includes("vodka") ||
+      categoryStr.includes("gin") || categoryStr.includes("rum") ||
+      categoryStr.includes("tequila") || categoryStr.includes("brandy") ||
+      categoryStr.includes("scotch") || categoryStr.includes("cognac") ||
+      categoryStr.includes("liqueur") || categoryStr.includes("mezcal") ||
+      categoryStr.includes("liquor") || categoryStr.includes("spirit") ||
+      categoryStr.includes("aperitif") || categoryStr.includes("digestif") ||
+      categoryStr.includes("amaro") || categoryStr.includes("bitters")) {
+    return "spirits";
+  }
   
   // Wine detection
   if (combined.includes("wine") || combined.includes("champagne") || 
       combined.includes("prosecco") || combined.includes("merlot") ||
-      combined.includes("cabernet") || combined.includes("chardonnay")) {
+      combined.includes("cabernet") || combined.includes("chardonnay") ||
+      combined.includes("pinot") || combined.includes("sauvignon")) {
     return "wine";
-  }
-  
-  // Liquor/spirits detection - check for "Wines & Spirits" parent category
-  if (combined.includes("whiskey") || combined.includes("whisky") ||
-      combined.includes("bourbon") || combined.includes("vodka") ||
-      combined.includes("gin") || combined.includes("rum") ||
-      combined.includes("tequila") || combined.includes("brandy") ||
-      combined.includes("liquor") || combined.includes("spirit") ||
-      combined.includes("scotch") || combined.includes("cognac") ||
-      combined.includes("liqueur") || combined.includes("mezcal") ||
-      parentStr.includes("spirits")) {
-    return "spirits";
   }
   
   // Kombucha
@@ -72,15 +103,23 @@ function normalizeBeverageType(category: string | undefined, parentCategory?: st
     return "na";
   }
   
-  // Beer detection (default for most alcoholic beverages)
-  if (combined.includes("beer") || combined.includes("ale") ||
-      combined.includes("lager") || combined.includes("stout") ||
-      combined.includes("ipa") || combined.includes("pilsner") ||
-      combined.includes("porter") || combined.includes("malt")) {
+  // Beer detection - only if explicitly beer-related
+  if (combined.includes("beer") || combined.includes("lager") ||
+      combined.includes("stout") || combined.includes("pilsner") ||
+      combined.includes("porter") || combined.includes("brew")) {
     return "beer";
   }
   
-  // Default to beer for unknown categories
+  // NOTE: "ale" and "ipa" removed from beer detection as they can appear
+  // in spirit names like "Ginger Ale" flavored spirits
+  
+  // Default to spirits for "Food, Beverages & Tobacco" category that 
+  // doesn't match other patterns - safer for taproom context
+  if (parentStr.includes("beverage") || parentStr.includes("tobacco")) {
+    return "spirits";
+  }
+  
+  // Default to beer for truly unknown categories
   return "beer";
 }
 
@@ -699,6 +738,39 @@ export default function ReceivingPage() {
                   </CardContent>
                 </Card>
               )}
+
+              {/* Brand and Type Row */}
+              <div className="grid grid-cols-2 gap-3">
+                <div className="space-y-2">
+                  <Label className="text-white">Brand</Label>
+                  <Input
+                    value={newProductBrand}
+                    onChange={(e) => setNewProductBrand(e.target.value)}
+                    placeholder="e.g., Jack Daniels"
+                    className="h-12 bg-[#0a2419] border-2 border-[#1A4D2E] text-white"
+                    data-testid="input-brand"
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label className="text-white">Type</Label>
+                  <Select
+                    value={newProductBeverageType}
+                    onValueChange={setNewProductBeverageType}
+                  >
+                    <SelectTrigger className="h-12 bg-[#0a2419] border-2 border-[#1A4D2E] text-white" data-testid="select-type">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent className="bg-[#0a2419] border-[#1A4D2E]">
+                      <SelectItem value="beer" className="text-white">Beer</SelectItem>
+                      <SelectItem value="spirits" className="text-white">Spirits</SelectItem>
+                      <SelectItem value="wine" className="text-white">Wine</SelectItem>
+                      <SelectItem value="cider" className="text-white">Cider</SelectItem>
+                      <SelectItem value="na" className="text-white">N/A</SelectItem>
+                      <SelectItem value="kombucha" className="text-white">Kombucha</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+              </div>
 
               <div className="space-y-2">
                 <Label className="text-white">Distributor</Label>

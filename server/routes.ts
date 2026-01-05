@@ -627,6 +627,148 @@ export async function registerRoutes(
     }
   });
 
+  // Batch re-categorize products using Barcode Spider data
+  // Looks up products with UPCs and updates their beverageType and brand
+  app.post("/api/products/recategorize", async (req: Request, res: Response) => {
+    try {
+      if (!req.session.userId) {
+        return res.status(401).json({ error: "Not authenticated" });
+      }
+      
+      const currentUser = await storage.getUser(req.session.userId);
+      if (!currentUser || (currentUser.role !== "owner" && currentUser.role !== "admin")) {
+        return res.status(403).json({ error: "Admin access required" });
+      }
+      
+      if (!isBarcodeSpiderConfigured()) {
+        return res.status(400).json({ error: "Barcode Spider not configured" });
+      }
+      
+      const { beverageTypeFilter } = req.body; // Optional: only process certain types
+      
+      const allProducts = await storage.getAllProducts();
+      
+      // Filter products that have UPCs and optionally by type
+      let toProcess = allProducts.filter(p => p.upc);
+      if (beverageTypeFilter) {
+        toProcess = toProcess.filter(p => p.beverageType === beverageTypeFilter);
+      }
+      
+      let updated = 0;
+      let skipped = 0;
+      let errors = 0;
+      const results: Array<{ id: number; name: string; oldType?: string; newType?: string; brand?: string; status: string }> = [];
+      
+      // Helper to normalize beverage type from Barcode Spider data
+      const normalizeBeverageType = (category?: string, parentCategory?: string): string => {
+        const categoryStr = (category || "").toLowerCase();
+        const parentStr = (parentCategory || "").toLowerCase();
+        
+        // Priority 1: Check parentCategory first
+        if (parentStr.includes("spirit") || parentStr.includes("liquor")) {
+          if (categoryStr.includes("wine") || categoryStr.includes("champagne") || 
+              categoryStr.includes("prosecco") || categoryStr.includes("vermouth")) {
+            return "wine";
+          }
+          return "spirits";
+        }
+        
+        if (parentStr.includes("wine")) return "wine";
+        if (parentStr.includes("beer") || parentStr.includes("brew")) return "beer";
+        
+        // Priority 2: Check category keywords
+        if (categoryStr.includes("whiskey") || categoryStr.includes("whisky") ||
+            categoryStr.includes("bourbon") || categoryStr.includes("vodka") ||
+            categoryStr.includes("gin") || categoryStr.includes("rum") ||
+            categoryStr.includes("tequila") || categoryStr.includes("brandy") ||
+            categoryStr.includes("scotch") || categoryStr.includes("cognac") ||
+            categoryStr.includes("liqueur") || categoryStr.includes("mezcal") ||
+            categoryStr.includes("liquor") || categoryStr.includes("spirit") ||
+            categoryStr.includes("aperitif") || categoryStr.includes("amaro")) {
+          return "spirits";
+        }
+        
+        const combined = `${categoryStr} ${parentStr}`;
+        if (combined.includes("wine") || combined.includes("champagne")) return "wine";
+        if (combined.includes("kombucha")) return "kombucha";
+        if (combined.includes("cider")) return "cider";
+        if (combined.includes("seltzer") || combined.includes("soda") || combined.includes("water")) return "na";
+        if (combined.includes("beer") || combined.includes("lager") || combined.includes("stout")) return "beer";
+        if (parentStr.includes("beverage") || parentStr.includes("tobacco")) return "spirits";
+        
+        return "beer";
+      };
+      
+      // Process up to 50 products at a time to avoid rate limits
+      const batch = toProcess.slice(0, 50);
+      
+      for (const product of batch) {
+        try {
+          // Add delay between requests to avoid rate limiting
+          await new Promise(resolve => setTimeout(resolve, 300));
+          
+          const barcodeData = await lookupUpc(product.upc!);
+          
+          if (barcodeData && barcodeData.title) {
+            const newBeverageType = normalizeBeverageType(barcodeData.category, barcodeData.parentCategory);
+            const newBrand = barcodeData.brand || barcodeData.manufacturer || product.brand;
+            
+            // Only update if there's a change
+            if (newBeverageType !== product.beverageType || (newBrand && newBrand !== product.brand)) {
+              await storage.updateProduct(product.id, {
+                beverageType: newBeverageType as any,
+                brand: newBrand || undefined,
+              });
+              
+              results.push({
+                id: product.id,
+                name: product.name,
+                oldType: product.beverageType || "unknown",
+                newType: newBeverageType,
+                brand: newBrand || undefined,
+                status: "updated",
+              });
+              updated++;
+            } else {
+              results.push({
+                id: product.id,
+                name: product.name,
+                status: "no_change",
+              });
+              skipped++;
+            }
+          } else {
+            results.push({
+              id: product.id,
+              name: product.name,
+              status: "not_found",
+            });
+            skipped++;
+          }
+        } catch (error) {
+          results.push({
+            id: product.id,
+            name: product.name,
+            status: "error",
+          });
+          errors++;
+        }
+      }
+      
+      return res.json({
+        updated,
+        skipped,
+        errors,
+        total: batch.length,
+        remaining: toProcess.length - batch.length,
+        results,
+      });
+    } catch (error) {
+      console.error("Batch recategorize error:", error);
+      return res.status(500).json({ error: "Internal server error" });
+    }
+  });
+
   // Receive inventory - kegs go to kegs table, bottles add to backupCount
   // In simulation mode, data is tagged with isSimulation=true to keep it separate
   app.post("/api/receiving", async (req: Request, res: Response) => {

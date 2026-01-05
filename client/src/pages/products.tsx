@@ -369,9 +369,10 @@ function StyleEditor({ beverageType, style, onChange }: StyleEditorProps) {
   const [forceDropdown, setForceDropdown] = useState(false);
   const [forceCustom, setForceCustom] = useState(false);
   
-  const styleOptions = beverageType === "spirits" ? SPIRIT_STYLES : 
-                       beverageType === "wine" ? WINE_STYLES : 
-                       beverageType === "beer" ? BEER_STYLES : [];
+  const normalizedType = (beverageType || "").toLowerCase();
+  const styleOptions = normalizedType === "spirits" ? SPIRIT_STYLES : 
+                       normalizedType === "wine" ? WINE_STYLES : 
+                       normalizedType === "beer" ? BEER_STYLES : [];
   
   const hasPresetOptions = styleOptions.length > 0;
   const isPresetStyle = styleOptions.includes(style);
