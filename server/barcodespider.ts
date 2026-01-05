@@ -77,6 +77,11 @@ export async function lookupUpc(upc: string): Promise<BarcodeSpiderProduct | nul
       throw new Error("RATE_LIMIT: Rate limit exceeded. Please try again later.");
     }
     
+    // 404 means product not found in database - this is not an error
+    if (response.status === 404) {
+      return null;
+    }
+    
     const data: BarcodeSpiderResponse = await response.json();
     
     // Check for authentication errors
