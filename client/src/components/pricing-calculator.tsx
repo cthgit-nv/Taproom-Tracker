@@ -1,4 +1,5 @@
 import { useState, useMemo, useEffect } from "react";
+import { useQuery } from "@tanstack/react-query";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Label } from "@/components/ui/label";
 import { Input } from "@/components/ui/input";
@@ -12,6 +13,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { AlertTriangle, Calculator, DollarSign } from "lucide-react";
+import type { PricingDefault } from "@shared/schema";
 
 const UNIT_SIZES = [
   { value: "half_bbl", label: "1/2 BBL (15.5 gal)", oz: 1984, isKeg: true },
@@ -33,10 +35,14 @@ const POUR_SIZES = [
   { value: "1", label: "Per Ounce", oz: 1 },
 ] as const;
 
+type PricingMode = "draft_per_oz" | "package_unit" | "bottle_pour" | "spirit_pour";
+
 interface PricingCalculatorProps {
   isSoldByVolume?: boolean;
   beverageType?: string;
   bottleSizeMl?: number;
+  pricingMode?: PricingMode;
+  defaultPourCost?: number;
   onApplyPrice?: (pricePerServing: number, costPerOz: number, servingSize: number) => void;
   className?: string;
 }
@@ -45,34 +51,63 @@ export function PricingCalculator({
   isSoldByVolume = true, 
   beverageType = "beer",
   bottleSizeMl,
+  pricingMode: propPricingMode,
+  defaultPourCost,
   onApplyPrice,
   className = "",
 }: PricingCalculatorProps) {
+  const { data: pricingDefaults } = useQuery<PricingDefault[]>({
+    queryKey: ["/api/pricing-defaults"],
+  });
+
+  const pricingMode: PricingMode = propPricingMode || (() => {
+    if (beverageType === "spirits") return "spirit_pour";
+    if (beverageType === "wine") return "bottle_pour";
+    if (bottleSizeMl && !isSoldByVolume) return "package_unit";
+    return "draft_per_oz";
+  })();
+
+  const adminDefault = pricingDefaults?.find(
+    d => d.beverageType === beverageType && d.pricingMode === pricingMode
+  );
+
   const getDefaultUnit = () => {
+    if (pricingMode === "draft_per_oz") return "half_bbl";
     if (bottleSizeMl) {
       if (bottleSizeMl >= 900) return "1L";
       if (bottleSizeMl >= 500) return "750ml";
       if (bottleSizeMl >= 300) return "375ml";
       return "200ml";
     }
-    return "half_bbl";
+    return "750ml";
   };
 
   const getDefaultPourSize = () => {
-    if (!isSoldByVolume) return "1.5";
-    if (beverageType === "wine") return "5";
+    if (pricingMode === "spirit_pour") return "1.5";
+    if (pricingMode === "bottle_pour") return "5";
+    if (adminDefault?.defaultServingSizeOz) return String(adminDefault.defaultServingSizeOz);
     return "16";
+  };
+
+  const getDefaultPourCostPercent = () => {
+    if (defaultPourCost) return Math.round(defaultPourCost * 100);
+    if (adminDefault?.targetPourCost) return Math.round(adminDefault.targetPourCost * 100);
+    return 22;
   };
 
   const [unitSize, setUnitSize] = useState<string>(getDefaultUnit);
   const [pourSize, setPourSize] = useState<string>(getDefaultPourSize);
   const [wholesaleCost, setWholesaleCost] = useState<string>("");
-  const [pourCostPercent, setPourCostPercent] = useState(22);
+  const [pourCostPercent, setPourCostPercent] = useState(getDefaultPourCostPercent);
+  const [hasUserAdjustedPourCost, setHasUserAdjustedPourCost] = useState(false);
 
   useEffect(() => {
     setUnitSize(getDefaultUnit());
     setPourSize(getDefaultPourSize());
-  }, [bottleSizeMl, beverageType, isSoldByVolume]);
+    if (!hasUserAdjustedPourCost) {
+      setPourCostPercent(getDefaultPourCostPercent());
+    }
+  }, [bottleSizeMl, beverageType, isSoldByVolume, pricingMode, adminDefault, defaultPourCost, hasUserAdjustedPourCost]);
 
   const selectedUnit = UNIT_SIZES.find(u => u.value === unitSize);
   const selectedPour = POUR_SIZES.find(p => p.value === pourSize);
@@ -110,15 +145,34 @@ export function PricingCalculator({
     }
   };
 
-  const showPourSize = isSoldByVolume && selectedUnit?.isKeg;
+  const showPourSize = pricingMode === "draft_per_oz" || pricingMode === "bottle_pour" || pricingMode === "spirit_pour";
+  const showPackageSelect = pricingMode === "draft_per_oz" || pricingMode === "package_unit";
+
+  const getPricingModeLabel = () => {
+    switch (pricingMode) {
+      case "draft_per_oz": return "Draft (per oz)";
+      case "package_unit": return "Package (as-is)";
+      case "bottle_pour": return "Bottle/Pour";
+      case "spirit_pour": return "Spirit (per shot)";
+      default: return "Standard";
+    }
+  };
 
   return (
     <Card className={`bg-[#051a11] border-[#1A4D2E] ${className}`}>
       <CardHeader className="pb-2">
-        <CardTitle className="text-sm font-medium text-[#D4AF37] flex items-center gap-2">
-          <Calculator className="w-4 h-4" />
-          Pricing Intelligence
-        </CardTitle>
+        <div className="flex items-center justify-between">
+          <CardTitle className="text-sm font-medium text-[#D4AF37] flex items-center gap-2">
+            <Calculator className="w-4 h-4" />
+            Pricing Intelligence
+          </CardTitle>
+          <span className="text-xs text-white/40">{getPricingModeLabel()}</span>
+        </div>
+        {adminDefault && (
+          <p className="text-xs text-white/40 mt-1">
+            Default: {Math.round(adminDefault.targetPourCost * 100)}% pour cost
+          </p>
+        )}
       </CardHeader>
       <CardContent className="space-y-4">
         <div className="grid grid-cols-2 gap-3">
@@ -205,7 +259,10 @@ export function PricingCalculator({
           </div>
           <Slider
             value={[pourCostPercent]}
-            onValueChange={(v) => setPourCostPercent(v[0])}
+            onValueChange={(v) => {
+              setPourCostPercent(v[0]);
+              setHasUserAdjustedPourCost(true);
+            }}
             min={15}
             max={35}
             step={1}

@@ -132,6 +132,43 @@ export async function registerRoutes(
   });
 
   // ========================
+  // Pricing Defaults Routes
+  // ========================
+
+  app.get("/api/pricing-defaults", async (_req: Request, res: Response) => {
+    try {
+      const defaults = await storage.getAllPricingDefaults();
+      return res.json(defaults);
+    } catch (error) {
+      console.error("Get pricing defaults error:", error);
+      return res.status(500).json({ error: "Internal server error" });
+    }
+  });
+
+  app.post("/api/pricing-defaults", async (req: Request, res: Response) => {
+    if (!req.session.userId) {
+      return res.status(401).json({ error: "Unauthorized" });
+    }
+    const user = await storage.getUser(req.session.userId);
+    if (!user || (user.role !== "owner" && user.role !== "admin")) {
+      return res.status(403).json({ error: "Admin access required" });
+    }
+    try {
+      const { beverageType, pricingMode, targetPourCost, defaultServingSizeOz } = req.body;
+      const result = await storage.upsertPricingDefault({
+        beverageType,
+        pricingMode,
+        targetPourCost,
+        defaultServingSizeOz,
+      });
+      return res.json(result);
+    } catch (error) {
+      console.error("Upsert pricing default error:", error);
+      return res.status(500).json({ error: "Internal server error" });
+    }
+  });
+
+  // ========================
   // Distributors Routes
   // ========================
   

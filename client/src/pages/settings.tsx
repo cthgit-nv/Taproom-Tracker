@@ -12,7 +12,9 @@ import { Badge } from "@/components/ui/badge";
 import { ArrowLeft, AlertTriangle, Shield, Database, Info, Home, Package, Beer, ShoppingCart, Settings as SettingsIcon, Plus, Truck, Calculator, Loader2 } from "lucide-react";
 import { Link } from "wouter";
 import { useToast } from "@/hooks/use-toast";
-import type { Settings, Distributor } from "@shared/schema";
+import type { Settings, Distributor, PricingDefault } from "@shared/schema";
+import { Slider } from "@/components/ui/slider";
+import { DollarSign } from "lucide-react";
 
 export default function SettingsPage() {
   const { user, logout } = useAuth();
@@ -38,6 +40,13 @@ export default function SettingsPage() {
   const { data: distributors = [] } = useQuery<Distributor[]>({
     queryKey: ["/api/distributors"],
   });
+
+  const { data: pricingDefaults = [] } = useQuery<PricingDefault[]>({
+    queryKey: ["/api/pricing-defaults"],
+  });
+
+  const [editingPricingDefault, setEditingPricingDefault] = useState<PricingDefault | null>(null);
+  const [editPourCost, setEditPourCost] = useState(22);
 
   const createDistributorMutation = useMutation({
     mutationFn: async ({ name, email }: { name: string; email?: string }) => {
@@ -67,6 +76,20 @@ export default function SettingsPage() {
     },
     onError: () => {
       toast({ title: "Error", description: "Failed to update formula", variant: "destructive" });
+    },
+  });
+
+  const updatePricingDefaultMutation = useMutation({
+    mutationFn: async (data: { beverageType: string; pricingMode: string; targetPourCost: number }) => {
+      return apiRequest("POST", "/api/pricing-defaults", data);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/pricing-defaults"] });
+      setEditingPricingDefault(null);
+      toast({ title: "Updated", description: "Default pour cost saved" });
+    },
+    onError: () => {
+      toast({ title: "Error", description: "Failed to update default", variant: "destructive" });
     },
   });
 
@@ -415,6 +438,103 @@ export default function SettingsPage() {
                   </Button>
                 </div>
               )}
+            </CardContent>
+          </Card>
+        )}
+
+        {(user.role === "admin" || user.role === "owner") && (
+          <Card className="bg-[#0a2419] border-2 border-[#1A4D2E]">
+            <CardHeader className="pb-2">
+              <CardTitle className="text-base text-white flex items-center gap-2">
+                <DollarSign className="w-5 h-5 text-[#D4AF37]" />
+                Default Pour Costs
+              </CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-3">
+              <p className="text-sm text-white/60">
+                Set default target pour costs by beverage type. Staff can adjust when putting items for sale.
+              </p>
+              
+              <div className="space-y-2">
+                {pricingDefaults.map(pd => {
+                  const modeLabel = pd.pricingMode === "draft_per_oz" ? "Draft" 
+                    : pd.pricingMode === "package_unit" ? "Package" 
+                    : pd.pricingMode === "bottle_pour" ? "Bottle/Pour" 
+                    : "Shot";
+                  
+                  const isEditing = editingPricingDefault?.id === pd.id;
+                  
+                  return (
+                    <div 
+                      key={pd.id} 
+                      className={`p-3 rounded-md ${isEditing ? "bg-[#051a11]" : "bg-[#051a11]/50"}`}
+                    >
+                      <div className="flex items-center justify-between mb-2">
+                        <div className="flex items-center gap-2">
+                          <span className="text-white capitalize">{pd.beverageType}</span>
+                          <span className="text-white/40 text-xs">({modeLabel})</span>
+                        </div>
+                        {!isEditing && (
+                          <Button
+                            size="sm"
+                            variant="ghost"
+                            className="text-white/60 h-7"
+                            onClick={() => {
+                              setEditingPricingDefault(pd);
+                              setEditPourCost(Math.round(pd.targetPourCost * 100));
+                            }}
+                            data-testid={`button-edit-pricing-${pd.id}`}
+                          >
+                            {Math.round(pd.targetPourCost * 100)}%
+                          </Button>
+                        )}
+                      </div>
+                      
+                      {isEditing && (
+                        <div className="space-y-3">
+                          <div className="flex items-center justify-between">
+                            <span className="text-white/60 text-sm">Target Pour Cost</span>
+                            <span className="text-white font-medium">{editPourCost}%</span>
+                          </div>
+                          <Slider
+                            value={[editPourCost]}
+                            onValueChange={(v) => setEditPourCost(v[0])}
+                            min={15}
+                            max={35}
+                            step={1}
+                            className="py-2"
+                            data-testid={`slider-pricing-${pd.id}`}
+                          />
+                          <div className="flex gap-2">
+                            <Button
+                              size="sm"
+                              className="flex-1 bg-[#1A4D2E]"
+                              onClick={() => updatePricingDefaultMutation.mutate({
+                                beverageType: pd.beverageType,
+                                pricingMode: pd.pricingMode,
+                                targetPourCost: editPourCost / 100,
+                              })}
+                              disabled={updatePricingDefaultMutation.isPending}
+                              data-testid={`button-save-pricing-${pd.id}`}
+                            >
+                              {updatePricingDefaultMutation.isPending ? <Loader2 className="w-4 h-4 animate-spin" /> : "Save"}
+                            </Button>
+                            <Button
+                              size="sm"
+                              variant="ghost"
+                              className="text-white/60"
+                              onClick={() => setEditingPricingDefault(null)}
+                              data-testid={`button-cancel-pricing-${pd.id}`}
+                            >
+                              Cancel
+                            </Button>
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
             </CardContent>
           </Card>
         )}
