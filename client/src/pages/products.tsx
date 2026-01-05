@@ -39,6 +39,7 @@ import {
   Loader2,
 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
+import { PricingCalculator } from "@/components/pricing-calculator";
 import type { Product, Distributor, BeverageType } from "@shared/schema";
 
 const BEVERAGE_TYPES: { value: BeverageType; label: string }[] = [
@@ -461,6 +462,9 @@ function ProductCard({ product, distributors, isExpanded, onToggle, onUpdate, is
     brand: product.brand ?? "",
     beverageType: product.beverageType ?? "beer",
     style: product.style ?? "",
+    pricePerUnit: product.pricePerUnit ?? "",
+    costPerUnit: product.costPerUnit ?? "",
+    appliedServingSize: 0,
   });
 
   const hasChanges =
@@ -469,7 +473,9 @@ function ProductCard({ product, distributors, isExpanded, onToggle, onUpdate, is
     editState.notes !== (product.notes ?? "") ||
     editState.brand !== (product.brand ?? "") ||
     editState.beverageType !== (product.beverageType ?? "beer") ||
-    editState.style !== (product.style ?? "");
+    editState.style !== (product.style ?? "") ||
+    editState.pricePerUnit !== (product.pricePerUnit ?? "") ||
+    editState.costPerUnit !== (product.costPerUnit ?? "");
 
   const handleSave = () => {
     onUpdate({
@@ -479,7 +485,26 @@ function ProductCard({ product, distributors, isExpanded, onToggle, onUpdate, is
       brand: editState.brand || null,
       beverageType: editState.beverageType as BeverageType,
       style: editState.style || null,
+      pricePerUnit: editState.pricePerUnit || null,
+      costPerUnit: editState.costPerUnit || null,
     });
+  };
+
+  const handleApplyPrice = (pricePerServing: number, costPerOz: number, servingSize: number) => {
+    setEditState(prev => ({
+      ...prev,
+      pricePerUnit: pricePerServing.toFixed(2),
+      costPerUnit: costPerOz.toFixed(3),
+      appliedServingSize: servingSize,
+    }));
+  };
+
+  const getServingLabel = (size: number) => {
+    if (size === 1.5) return "shot";
+    if (size === 16) return "pint";
+    if (size === 5) return "glass";
+    if (size >= 25) return "bottle";
+    return `${size}oz`;
   };
 
   const distributor = distributors.find(d => d.id === product.distributorId);
@@ -638,6 +663,32 @@ function ProductCard({ product, distributors, isExpanded, onToggle, onUpdate, is
               <p className="text-sm text-white/60">{product.description}</p>
             )}
 
+            <PricingCalculator 
+              isSoldByVolume={product.isSoldByVolume !== false}
+              beverageType={product.beverageType || "beer"}
+              bottleSizeMl={product.bottleSizeMl || undefined}
+              onApplyPrice={handleApplyPrice}
+            />
+
+            {(editState.pricePerUnit || editState.costPerUnit) && (
+              <div className="flex gap-4 text-sm bg-[#051a11] p-3 rounded-md">
+                {editState.pricePerUnit && (
+                  <div>
+                    <span className="text-white/60">Price: </span>
+                    <span className="text-[#D4AF37] font-medium">
+                      ${editState.pricePerUnit}/{editState.appliedServingSize > 0 ? getServingLabel(editState.appliedServingSize) : "unit"}
+                    </span>
+                  </div>
+                )}
+                {editState.costPerUnit && (
+                  <div>
+                    <span className="text-white/60">Cost: </span>
+                    <span className="text-white">${editState.costPerUnit}/oz</span>
+                  </div>
+                )}
+              </div>
+            )}
+
             {hasChanges && (
               <div className="flex gap-2">
                 <Button
@@ -664,6 +715,9 @@ function ProductCard({ product, distributors, isExpanded, onToggle, onUpdate, is
                     brand: product.brand ?? "",
                     beverageType: product.beverageType ?? "beer",
                     style: product.style ?? "",
+                    pricePerUnit: product.pricePerUnit ?? "",
+                    costPerUnit: product.costPerUnit ?? "",
+                    appliedServingSize: 0,
                   })}
                   className="text-white/60"
                   data-testid="button-cancel-edit"

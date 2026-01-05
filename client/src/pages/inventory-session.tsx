@@ -37,6 +37,7 @@ import {
   Gauge
 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
+import { PricingCalculator } from "@/components/pricing-calculator";
 import type { Zone, Product, InventorySession, Settings } from "@shared/schema";
 import { pmbService, type KegLevel } from "@/services/PourMyBeerService";
 
@@ -2019,6 +2020,13 @@ function ScanModeContent({
                 </select>
               </div>
             </div>
+
+            <PricingCalculator 
+              isSoldByVolume={newProductBeverageType !== "spirits"}
+              beverageType={newProductBeverageType}
+              bottleSizeMl={parseInt(newProductSizeMl) || 750}
+            />
+
             <div className="flex gap-2 pt-2">
               <Button
                 variant="outline"
