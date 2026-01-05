@@ -1,8 +1,14 @@
 // Untappd for Business API Integration Service
 // Fetches tap list and beer data using Basic Auth (email:token)
-// Uses environment variables for secure credential storage
+// Uses database settings for credential storage
 
 const UNTAPPD_API_BASE = "https://business.untappd.com/api/v1";
+
+export interface UntappdCredentials {
+  email: string;
+  token: string;
+  locationId: string;
+}
 
 export interface UntappdMenuItem {
   id: number;
@@ -57,42 +63,26 @@ export interface UntappdSyncResult {
   totalOnTap: number;
 }
 
-// Get credentials from environment variables
-function getCredentials() {
-  const email = process.env.UNTAPPD_EMAIL;
-  const token = process.env.UNTAPPD_API_TOKEN;
-  const locationId = process.env.UNTAPPD_LOCATION_ID;
-  
-  if (!email || !token || !locationId) {
-    throw new Error("Untappd credentials not configured. Set UNTAPPD_EMAIL, UNTAPPD_API_TOKEN, and UNTAPPD_LOCATION_ID.");
-  }
-  
-  return { email, token, locationId };
-}
-
-// Generate Basic Auth header
-function getAuthHeader(): string {
-  const { email, token } = getCredentials();
-  const encoded = Buffer.from(`${email}:${token}`).toString('base64');
+// Generate Basic Auth header from credentials
+function getAuthHeader(credentials: UntappdCredentials): string {
+  const encoded = Buffer.from(`${credentials.email}:${credentials.token}`).toString('base64');
   return `Basic ${encoded}`;
 }
 
-// Check if Untappd is configured
-export function isUntappdConfigured(): boolean {
+// Check if Untappd credentials are complete
+export function isUntappdConfigured(credentials: Partial<UntappdCredentials> | null): boolean {
   return !!(
-    process.env.UNTAPPD_EMAIL &&
-    process.env.UNTAPPD_API_TOKEN &&
-    process.env.UNTAPPD_LOCATION_ID
+    credentials?.email &&
+    credentials?.token &&
+    credentials?.locationId
   );
 }
 
 // Fetch all menus for the location
-export async function fetchMenus(): Promise<UntappdMenu[]> {
-  const { locationId } = getCredentials();
-  
-  const response = await fetch(`${UNTAPPD_API_BASE}/locations/${locationId}/menus`, {
+export async function fetchMenus(credentials: UntappdCredentials): Promise<UntappdMenu[]> {
+  const response = await fetch(`${UNTAPPD_API_BASE}/locations/${credentials.locationId}/menus`, {
     headers: {
-      'Authorization': getAuthHeader(),
+      'Authorization': getAuthHeader(credentials),
       'Accept': 'application/json',
     },
   });
@@ -108,10 +98,10 @@ export async function fetchMenus(): Promise<UntappdMenu[]> {
 }
 
 // Fetch sections for a specific menu
-export async function fetchMenuSections(menuId: number): Promise<UntappdSection[]> {
+export async function fetchMenuSections(credentials: UntappdCredentials, menuId: number): Promise<UntappdSection[]> {
   const response = await fetch(`${UNTAPPD_API_BASE}/menus/${menuId}/sections`, {
     headers: {
-      'Authorization': getAuthHeader(),
+      'Authorization': getAuthHeader(credentials),
       'Accept': 'application/json',
     },
   });
@@ -127,10 +117,10 @@ export async function fetchMenuSections(menuId: number): Promise<UntappdSection[
 }
 
 // Fetch items for a specific section
-export async function fetchSectionItems(sectionId: number): Promise<UntappdMenuItem[]> {
+export async function fetchSectionItems(credentials: UntappdCredentials, sectionId: number): Promise<UntappdMenuItem[]> {
   const response = await fetch(`${UNTAPPD_API_BASE}/sections/${sectionId}/items`, {
     headers: {
-      'Authorization': getAuthHeader(),
+      'Authorization': getAuthHeader(credentials),
       'Accept': 'application/json',
     },
   });
@@ -146,14 +136,14 @@ export async function fetchSectionItems(sectionId: number): Promise<UntappdMenuI
 }
 
 // Fetch complete tap list (all menus, sections, and items)
-export async function fetchFullTapList(): Promise<UntappdMenuItem[]> {
-  const menus = await fetchMenus();
+export async function fetchFullTapList(credentials: UntappdCredentials): Promise<UntappdMenuItem[]> {
+  const menus = await fetchMenus(credentials);
   const allItems: UntappdMenuItem[] = [];
   
   for (const menu of menus) {
-    const sections = await fetchMenuSections(menu.id);
+    const sections = await fetchMenuSections(credentials, menu.id);
     for (const section of sections) {
-      const items = await fetchSectionItems(section.id);
+      const items = await fetchSectionItems(credentials, section.id);
       allItems.push(...items);
     }
   }
@@ -162,21 +152,21 @@ export async function fetchFullTapList(): Promise<UntappdMenuItem[]> {
 }
 
 // Preview tap list without making changes
-export async function previewTapList(): Promise<{
+export async function previewTapList(credentials: UntappdCredentials): Promise<{
   menus: Array<{ id: number; name: string; sectionCount: number; itemCount: number }>;
   totalItems: number;
   items: UntappdMenuItem[];
 }> {
-  const menus = await fetchMenus();
+  const menus = await fetchMenus(credentials);
   const menuSummaries: Array<{ id: number; name: string; sectionCount: number; itemCount: number }> = [];
   const allItems: UntappdMenuItem[] = [];
   
   for (const menu of menus) {
-    const sections = await fetchMenuSections(menu.id);
+    const sections = await fetchMenuSections(credentials, menu.id);
     let itemCount = 0;
     
     for (const section of sections) {
-      const items = await fetchSectionItems(section.id);
+      const items = await fetchSectionItems(credentials, section.id);
       itemCount += items.length;
       allItems.push(...items);
     }

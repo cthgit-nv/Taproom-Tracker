@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useAuth } from "@/lib/auth-context";
 import { useLocation } from "wouter";
 import { useQuery, useMutation } from "@tanstack/react-query";
@@ -9,7 +9,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
 import { Badge } from "@/components/ui/badge";
-import { ArrowLeft, AlertTriangle, Shield, Database, Info, Home, Package, Beer, ShoppingCart, Settings as SettingsIcon, Plus, Truck, Calculator, Loader2 } from "lucide-react";
+import { ArrowLeft, AlertTriangle, Shield, Database, Info, Home, Package, Beer, ShoppingCart, Settings as SettingsIcon, Plus, Truck, Calculator, Loader2, Key, Eye, EyeOff } from "lucide-react";
 import { Link } from "wouter";
 import { useToast } from "@/hooks/use-toast";
 import type { Settings, Distributor, PricingDefault } from "@shared/schema";
@@ -47,6 +47,17 @@ export default function SettingsPage() {
 
   const [editingPricingDefault, setEditingPricingDefault] = useState<PricingDefault | null>(null);
   const [editPourCost, setEditPourCost] = useState(22);
+  
+  // API Keys state
+  const [untappdEmail, setUntappdEmail] = useState("");
+  const [untappdLocationId, setUntappdLocationId] = useState("");
+  const [untappdReadToken, setUntappdReadToken] = useState("");
+  const [untappdWriteToken, setUntappdWriteToken] = useState("");
+  const [barcodespiderToken, setBarcodespiderToken] = useState("");
+  const [showUntappdRead, setShowUntappdRead] = useState(false);
+  const [showUntappdWrite, setShowUntappdWrite] = useState(false);
+  const [showBarcodespider, setShowBarcodespider] = useState(false);
+  const [editingApiKeys, setEditingApiKeys] = useState(false);
 
   const createDistributorMutation = useMutation({
     mutationFn: async ({ name, email }: { name: string; email?: string }) => {
@@ -114,6 +125,37 @@ export default function SettingsPage() {
       });
     },
   });
+  
+  const updateApiKeysMutation = useMutation({
+    mutationFn: async (data: {
+      untappdEmail?: string;
+      untappdLocationId?: string;
+      untappdReadToken?: string;
+      untappdWriteToken?: string;
+      barcodespiderToken?: string;
+    }) => {
+      return apiRequest("PATCH", "/api/settings", data);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/settings"] });
+      setEditingApiKeys(false);
+      toast({ title: "API Keys Updated", description: "External API credentials saved securely" });
+    },
+    onError: () => {
+      toast({ title: "Error", description: "Failed to update API keys", variant: "destructive" });
+    },
+  });
+
+  // Load API keys from settings when available
+  useEffect(() => {
+    if (settings) {
+      setUntappdEmail(settings.untappdEmail || "");
+      setUntappdLocationId(settings.untappdLocationId || "");
+      setUntappdReadToken(settings.untappdReadToken || "");
+      setUntappdWriteToken(settings.untappdWriteToken || "");
+      setBarcodespiderToken(settings.barcodespiderToken || "");
+    }
+  }, [settings]);
 
   if (!user) {
     setLocation("/");
@@ -535,6 +577,191 @@ export default function SettingsPage() {
                   );
                 })}
               </div>
+            </CardContent>
+          </Card>
+        )}
+
+        {isOwner && (
+          <Card className="bg-[#0a2419] border-2 border-[#1A4D2E]">
+            <CardHeader className="pb-2">
+              <CardTitle className="text-base text-white flex items-center gap-2">
+                <Key className="w-5 h-5 text-[#D4AF37]" />
+                External API Keys
+              </CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-3">
+              <p className="text-sm text-white/60">
+                Configure external service integrations. These credentials are stored securely.
+              </p>
+              
+              {editingApiKeys ? (
+                <div className="space-y-4 p-3 bg-[#051a11] rounded-md">
+                  <div className="space-y-3">
+                    <p className="text-xs text-white/40 uppercase tracking-wide">Untappd for Business</p>
+                    
+                    <div className="space-y-1">
+                      <Label className="text-white/60 text-xs">Email</Label>
+                      <Input
+                        value={untappdEmail}
+                        onChange={(e) => setUntappdEmail(e.target.value)}
+                        placeholder="your@email.com"
+                        className="bg-[#0a2419] border-[#1A4D2E] text-white"
+                        data-testid="input-untappd-email"
+                      />
+                    </div>
+                    
+                    <div className="space-y-1">
+                      <Label className="text-white/60 text-xs">Location ID</Label>
+                      <Input
+                        value={untappdLocationId}
+                        onChange={(e) => setUntappdLocationId(e.target.value)}
+                        placeholder="38075"
+                        className="bg-[#0a2419] border-[#1A4D2E] text-white"
+                        data-testid="input-untappd-location-id"
+                      />
+                    </div>
+                    
+                    <div className="space-y-1">
+                      <Label className="text-white/60 text-xs">Read Token</Label>
+                      <div className="relative">
+                        <Input
+                          type={showUntappdRead ? "text" : "password"}
+                          value={untappdReadToken}
+                          onChange={(e) => setUntappdReadToken(e.target.value)}
+                          placeholder="Read-only API token"
+                          className="bg-[#0a2419] border-[#1A4D2E] text-white pr-10"
+                          data-testid="input-untappd-read-token"
+                        />
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="icon"
+                          className="absolute right-0 top-0 h-full text-white/40"
+                          onClick={() => setShowUntappdRead(!showUntappdRead)}
+                        >
+                          {showUntappdRead ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                        </Button>
+                      </div>
+                    </div>
+                    
+                    <div className="space-y-1">
+                      <Label className="text-white/60 text-xs">Write Token (optional)</Label>
+                      <div className="relative">
+                        <Input
+                          type={showUntappdWrite ? "text" : "password"}
+                          value={untappdWriteToken}
+                          onChange={(e) => setUntappdWriteToken(e.target.value)}
+                          placeholder="Read/write API token"
+                          className="bg-[#0a2419] border-[#1A4D2E] text-white pr-10"
+                          data-testid="input-untappd-write-token"
+                        />
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="icon"
+                          className="absolute right-0 top-0 h-full text-white/40"
+                          onClick={() => setShowUntappdWrite(!showUntappdWrite)}
+                        >
+                          {showUntappdWrite ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                        </Button>
+                      </div>
+                    </div>
+                  </div>
+                  
+                  <div className="space-y-3 pt-3 border-t border-[#1A4D2E]">
+                    <p className="text-xs text-white/40 uppercase tracking-wide">Barcode Spider</p>
+                    
+                    <div className="space-y-1">
+                      <Label className="text-white/60 text-xs">API Token</Label>
+                      <div className="relative">
+                        <Input
+                          type={showBarcodespider ? "text" : "password"}
+                          value={barcodespiderToken}
+                          onChange={(e) => setBarcodespiderToken(e.target.value)}
+                          placeholder="Barcode Spider API token"
+                          className="bg-[#0a2419] border-[#1A4D2E] text-white pr-10"
+                          data-testid="input-barcodespider-token"
+                        />
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="icon"
+                          className="absolute right-0 top-0 h-full text-white/40"
+                          onClick={() => setShowBarcodespider(!showBarcodespider)}
+                        >
+                          {showBarcodespider ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                        </Button>
+                      </div>
+                    </div>
+                  </div>
+                  
+                  <div className="flex gap-2 pt-2">
+                    <Button
+                      size="sm"
+                      className="flex-1 bg-[#1A4D2E]"
+                      onClick={() => updateApiKeysMutation.mutate({
+                        untappdEmail: untappdEmail || undefined,
+                        untappdLocationId: untappdLocationId || undefined,
+                        untappdReadToken: untappdReadToken || undefined,
+                        untappdWriteToken: untappdWriteToken || undefined,
+                        barcodespiderToken: barcodespiderToken || undefined,
+                      })}
+                      disabled={updateApiKeysMutation.isPending}
+                      data-testid="button-save-api-keys"
+                    >
+                      {updateApiKeysMutation.isPending ? <Loader2 className="w-4 h-4 animate-spin" /> : "Save"}
+                    </Button>
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      className="text-white/60"
+                      onClick={() => {
+                        setEditingApiKeys(false);
+                        // Reset to saved values
+                        if (settings) {
+                          setUntappdEmail(settings.untappdEmail || "");
+                          setUntappdLocationId(settings.untappdLocationId || "");
+                          setUntappdReadToken(settings.untappdReadToken || "");
+                          setUntappdWriteToken(settings.untappdWriteToken || "");
+                          setBarcodespiderToken(settings.barcodespiderToken || "");
+                        }
+                      }}
+                      data-testid="button-cancel-api-keys"
+                    >
+                      Cancel
+                    </Button>
+                  </div>
+                </div>
+              ) : (
+                <div className="space-y-2">
+                  <div className="flex items-center justify-between py-1">
+                    <span className="text-white/60 text-sm">Untappd</span>
+                    <Badge 
+                      variant="outline" 
+                      className={settings?.untappdReadToken ? "border-green-500 text-green-400" : "border-white/20 text-white/40"}
+                    >
+                      {settings?.untappdReadToken ? "Configured" : "Not Set"}
+                    </Badge>
+                  </div>
+                  <div className="flex items-center justify-between py-1">
+                    <span className="text-white/60 text-sm">Barcode Spider</span>
+                    <Badge 
+                      variant="outline" 
+                      className={settings?.barcodespiderToken ? "border-green-500 text-green-400" : "border-white/20 text-white/40"}
+                    >
+                      {settings?.barcodespiderToken ? "Configured" : "Not Set"}
+                    </Badge>
+                  </div>
+                  <Button
+                    variant="outline"
+                    className="w-full border-[#1A4D2E] text-white/80 mt-2"
+                    onClick={() => setEditingApiKeys(true)}
+                    data-testid="button-edit-api-keys"
+                  >
+                    Edit API Keys
+                  </Button>
+                </div>
+              )}
             </CardContent>
           </Card>
         )}
