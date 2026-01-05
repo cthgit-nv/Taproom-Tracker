@@ -5,8 +5,8 @@ import { storage } from "./storage";
 import { pinLoginSchema, insertProductSchema, updateProductSchema, insertPricingDefaultSchema } from "@shared/schema";
 import { z } from "zod";
 import { fetchDailySales, fetchProductCatalog, isGoTabConfigured, type GoTabSalesResult, type GoTabProduct } from "./gotab";
-import { isUntappdConfigured, previewTapList, fetchFullTapList, type UntappdMenuItem, type UntappdCredentials } from "./untappd";
-import { isBarcodeSpiderConfigured, getApiStatus as getBarcodeSpiderStatus, lookupUpc as lookupUpcBarcodeSpider } from "./barcodespider";
+import { isUntappdConfigured, previewTapList, fetchFullTapList, type UntappdMenuItem } from "./untappd";
+import { isBarcodeSpiderConfigured, getApiStatus as getBarcodeSpiderStatus } from "./barcodespider";
 import { lookupUpc as lookupUpcOrchestrator, getLookupStatus } from "./upcLookup";
 
 // Extend express-session types
@@ -1545,19 +1545,6 @@ export async function registerRoutes(
   // Untappd Integration Routes (Admin/Owner Only)
   // ========================
   
-  // Helper to get Untappd credentials from settings
-  async function getUntappdCredentials(): Promise<UntappdCredentials | null> {
-    const settings = await storage.getSettings();
-    if (!settings?.untappdEmail || !settings?.untappdReadToken || !settings?.untappdLocationId) {
-      return null;
-    }
-    return {
-      email: settings.untappdEmail,
-      token: settings.untappdReadToken,
-      locationId: settings.untappdLocationId,
-    };
-  }
-
   // Check Untappd configuration status
   app.get("/api/untappd/status", async (req: Request, res: Response) => {
     try {
@@ -1570,12 +1557,9 @@ export async function registerRoutes(
         return res.status(403).json({ error: "Admin access required" });
       }
       
-      const credentials = await getUntappdCredentials();
-      const configured = isUntappdConfigured(credentials);
-      
       return res.json({ 
-        configured,
-        message: configured ? "Untappd is configured" : "Untappd credentials not set"
+        configured: isUntappdConfigured(),
+        message: isUntappdConfigured() ? "Untappd is configured" : "Untappd credentials not set"
       });
     } catch (error) {
       console.error("Untappd status error:", error);
@@ -1595,12 +1579,11 @@ export async function registerRoutes(
         return res.status(403).json({ error: "Admin access required" });
       }
       
-      const credentials = await getUntappdCredentials();
-      if (!credentials) {
-        return res.status(400).json({ error: "Untappd not configured. Go to Settings > External API Keys to configure." });
+      if (!isUntappdConfigured()) {
+        return res.status(400).json({ error: "Untappd not configured. Set UNTAPPD_EMAIL, UNTAPPD_API_TOKEN, and UNTAPPD_LOCATION_ID." });
       }
       
-      const tapList = await previewTapList(credentials);
+      const tapList = await previewTapList();
       return res.json(tapList);
     } catch (error) {
       console.error("Untappd preview error:", error);
@@ -1621,12 +1604,11 @@ export async function registerRoutes(
         return res.status(403).json({ error: "Admin access required" });
       }
       
-      const credentials = await getUntappdCredentials();
-      if (!credentials) {
+      if (!isUntappdConfigured()) {
         return res.status(400).json({ error: "Untappd not configured" });
       }
       
-      const tapListItems = await fetchFullTapList(credentials);
+      const tapListItems = await fetchFullTapList();
       const existingProducts = await storage.getAllProducts();
       
       let newBeers: Array<{ name: string; brewery: string | null; style: string | null }> = [];

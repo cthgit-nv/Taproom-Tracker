@@ -47,18 +47,17 @@ const BARCODESPIDER_API_URL = "https://api.barcodespider.com/v1/lookup";
 /**
  * Check if Barcode Spider API is configured
  */
-export function isBarcodeSpiderConfigured(token?: string | null): boolean {
-  return !!token;
+export function isBarcodeSpiderConfigured(): boolean {
+  return !!process.env.BARCODESPIDER_API_TOKEN;
 }
 
 /**
  * Look up a UPC code using Barcode Spider API
- * @param upc - The UPC code to look up
- * @param token - The API token (from database settings)
  */
-export async function lookupUpc(upc: string, token: string): Promise<BarcodeSpiderProduct | null> {
+export async function lookupUpc(upc: string): Promise<BarcodeSpiderProduct | null> {
+  const token = process.env.BARCODESPIDER_API_TOKEN;
+  
   if (!token) {
-    console.warn("Missing Barcode Spider Token");
     throw new Error("Barcode Spider API token not configured");
   }
   
@@ -123,9 +122,9 @@ export async function lookupUpc(upc: string, token: string): Promise<BarcodeSpid
 /**
  * Get API status/configuration info
  */
-export function getApiStatus(token?: string | null): { configured: boolean; endpoint: string } {
+export function getApiStatus(): { configured: boolean; endpoint: string } {
   return {
-    configured: isBarcodeSpiderConfigured(token),
+    configured: isBarcodeSpiderConfigured(),
     endpoint: BARCODESPIDER_API_URL,
   };
 }
