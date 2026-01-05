@@ -16,6 +16,7 @@ import AdminIntegrationsPage from "@/pages/admin-integrations";
 import SettingsPage from "@/pages/settings";
 import KegsPage from "@/pages/kegs";
 import ProductsPage from "@/pages/products";
+import OrdersPage from "@/pages/orders";
 import NotFound from "@/pages/not-found";
 import type { Settings } from "@shared/schema";
 
@@ -47,6 +48,7 @@ function Router() {
       <Route path="/settings" component={SettingsPage} />
       <Route path="/kegs" component={KegsPage} />
       <Route path="/products" component={ProductsPage} />
+      <Route path="/orders" component={OrdersPage} />
       <Route component={NotFound} />
     </Switch>
   );

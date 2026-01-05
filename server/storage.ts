@@ -1,5 +1,6 @@
 import { 
   users, settings, distributors, products, kegs, taps, zones, inventorySessions, inventoryCounts, receivingLogs,
+  reorderFlags, orders, orderItems,
   type User, type InsertUser,
   type Settings, type InsertSettings,
   type Distributor, type InsertDistributor,
@@ -9,10 +10,13 @@ import {
   type Zone, type InsertZone,
   type InventorySession, type InsertInventorySession,
   type InventoryCount, type InsertInventoryCount,
-  type ReceivingLog, type InsertReceivingLog
+  type ReceivingLog, type InsertReceivingLog,
+  type ReorderFlag, type InsertReorderFlag,
+  type Order, type InsertOrder,
+  type OrderItem, type InsertOrderItem
 } from "@shared/schema";
 import { db } from "./db";
-import { eq, and } from "drizzle-orm";
+import { eq, and, isNull, isNotNull, desc } from "drizzle-orm";
 
 export interface IStorage {
   // Users
@@ -76,6 +80,25 @@ export interface IStorage {
   
   // Product lookup
   getProductByUpc(upc: string): Promise<Product | undefined>;
+  
+  // Reorder Flags
+  createReorderFlag(flag: InsertReorderFlag): Promise<ReorderFlag>;
+  getActiveReorderFlags(): Promise<ReorderFlag[]>;
+  getReorderFlag(id: number): Promise<ReorderFlag | undefined>;
+  resolveReorderFlag(id: number, orderId?: number): Promise<ReorderFlag | undefined>;
+  
+  // Orders
+  createOrder(order: InsertOrder): Promise<Order>;
+  getOrder(id: number): Promise<Order | undefined>;
+  getAllOrders(status?: string): Promise<Order[]>;
+  getOrdersByDistributor(distributorId: number): Promise<Order[]>;
+  updateOrder(id: number, order: Partial<InsertOrder>): Promise<Order | undefined>;
+  
+  // Order Items
+  createOrderItem(item: InsertOrderItem): Promise<OrderItem>;
+  getOrderItems(orderId: number): Promise<OrderItem[]>;
+  updateOrderItem(id: number, item: Partial<InsertOrderItem>): Promise<OrderItem | undefined>;
+  deleteOrderItem(id: number): Promise<void>;
 }
 
 export class DatabaseStorage implements IStorage {
@@ -302,6 +325,74 @@ export class DatabaseStorage implements IStorage {
   async getProductByUpc(upc: string): Promise<Product | undefined> {
     const [result] = await db.select().from(products).where(eq(products.upc, upc));
     return result || undefined;
+  }
+
+  // Reorder Flags
+  async createReorderFlag(insertFlag: InsertReorderFlag): Promise<ReorderFlag> {
+    const [result] = await db.insert(reorderFlags).values(insertFlag).returning();
+    return result;
+  }
+
+  async getActiveReorderFlags(): Promise<ReorderFlag[]> {
+    return db.select().from(reorderFlags).where(isNull(reorderFlags.resolvedAt)).orderBy(desc(reorderFlags.createdAt));
+  }
+
+  async getReorderFlag(id: number): Promise<ReorderFlag | undefined> {
+    const [result] = await db.select().from(reorderFlags).where(eq(reorderFlags.id, id));
+    return result || undefined;
+  }
+
+  async resolveReorderFlag(id: number, orderId?: number): Promise<ReorderFlag | undefined> {
+    const updateData: Partial<ReorderFlag> = { resolvedAt: new Date() };
+    if (orderId) updateData.orderId = orderId;
+    const [result] = await db.update(reorderFlags).set(updateData).where(eq(reorderFlags.id, id)).returning();
+    return result || undefined;
+  }
+
+  // Orders
+  async createOrder(insertOrder: InsertOrder): Promise<Order> {
+    const [result] = await db.insert(orders).values(insertOrder).returning();
+    return result;
+  }
+
+  async getOrder(id: number): Promise<Order | undefined> {
+    const [result] = await db.select().from(orders).where(eq(orders.id, id));
+    return result || undefined;
+  }
+
+  async getAllOrders(status?: string): Promise<Order[]> {
+    if (status) {
+      return db.select().from(orders).where(eq(orders.status, status as any)).orderBy(desc(orders.createdAt));
+    }
+    return db.select().from(orders).orderBy(desc(orders.createdAt));
+  }
+
+  async getOrdersByDistributor(distributorId: number): Promise<Order[]> {
+    return db.select().from(orders).where(eq(orders.distributorId, distributorId)).orderBy(desc(orders.createdAt));
+  }
+
+  async updateOrder(id: number, updateData: Partial<InsertOrder>): Promise<Order | undefined> {
+    const [result] = await db.update(orders).set(updateData).where(eq(orders.id, id)).returning();
+    return result || undefined;
+  }
+
+  // Order Items
+  async createOrderItem(insertItem: InsertOrderItem): Promise<OrderItem> {
+    const [result] = await db.insert(orderItems).values(insertItem).returning();
+    return result;
+  }
+
+  async getOrderItems(orderId: number): Promise<OrderItem[]> {
+    return db.select().from(orderItems).where(eq(orderItems.orderId, orderId));
+  }
+
+  async updateOrderItem(id: number, updateData: Partial<InsertOrderItem>): Promise<OrderItem | undefined> {
+    const [result] = await db.update(orderItems).set(updateData).where(eq(orderItems.id, id)).returning();
+    return result || undefined;
+  }
+
+  async deleteOrderItem(id: number): Promise<void> {
+    await db.delete(orderItems).where(eq(orderItems.id, id));
   }
 }
 

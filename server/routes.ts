@@ -843,6 +843,223 @@ export async function registerRoutes(
   });
 
   // ========================
+  // Reorder Flags Routes
+  // ========================
+
+  app.get("/api/reorder-flags", async (req: Request, res: Response) => {
+    try {
+      const flags = await storage.getActiveReorderFlags();
+      return res.json(flags);
+    } catch (error) {
+      console.error("Get reorder flags error:", error);
+      return res.status(500).json({ error: "Internal server error" });
+    }
+  });
+
+  app.post("/api/reorder-flags", async (req: Request, res: Response) => {
+    try {
+      if (!req.session.userId) {
+        return res.status(401).json({ error: "Not authenticated" });
+      }
+      
+      const { productId, kegId, reason, suggestedQuantity } = req.body;
+      if (!productId) {
+        return res.status(400).json({ error: "Product ID is required" });
+      }
+      
+      const flag = await storage.createReorderFlag({
+        productId,
+        kegId: kegId || null,
+        flaggedById: req.session.userId,
+        reason: reason || null,
+        suggestedQuantity: suggestedQuantity || 1,
+      });
+      
+      return res.status(201).json(flag);
+    } catch (error) {
+      console.error("Create reorder flag error:", error);
+      return res.status(500).json({ error: "Internal server error" });
+    }
+  });
+
+  app.patch("/api/reorder-flags/:id/resolve", async (req: Request, res: Response) => {
+    try {
+      const flagId = parseInt(req.params.id);
+      const { orderId } = req.body;
+      
+      const flag = await storage.resolveReorderFlag(flagId, orderId);
+      if (!flag) {
+        return res.status(404).json({ error: "Flag not found" });
+      }
+      
+      return res.json(flag);
+    } catch (error) {
+      console.error("Resolve reorder flag error:", error);
+      return res.status(500).json({ error: "Internal server error" });
+    }
+  });
+
+  // ========================
+  // Orders Routes
+  // ========================
+
+  app.get("/api/orders", async (req: Request, res: Response) => {
+    try {
+      const status = req.query.status as string | undefined;
+      const orders = await storage.getAllOrders(status);
+      return res.json(orders);
+    } catch (error) {
+      console.error("Get orders error:", error);
+      return res.status(500).json({ error: "Internal server error" });
+    }
+  });
+
+  app.get("/api/orders/:id", async (req: Request, res: Response) => {
+    try {
+      const orderId = parseInt(req.params.id);
+      const order = await storage.getOrder(orderId);
+      if (!order) {
+        return res.status(404).json({ error: "Order not found" });
+      }
+      return res.json(order);
+    } catch (error) {
+      console.error("Get order error:", error);
+      return res.status(500).json({ error: "Internal server error" });
+    }
+  });
+
+  app.post("/api/orders", async (req: Request, res: Response) => {
+    try {
+      if (!req.session.userId) {
+        return res.status(401).json({ error: "Not authenticated" });
+      }
+      
+      const { distributorId, notes } = req.body;
+      if (!distributorId) {
+        return res.status(400).json({ error: "Distributor ID is required" });
+      }
+      
+      const order = await storage.createOrder({
+        distributorId,
+        createdById: req.session.userId,
+        notes: notes || null,
+        status: "draft",
+      });
+      
+      return res.status(201).json(order);
+    } catch (error) {
+      console.error("Create order error:", error);
+      return res.status(500).json({ error: "Internal server error" });
+    }
+  });
+
+  app.patch("/api/orders/:id", async (req: Request, res: Response) => {
+    try {
+      const orderId = parseInt(req.params.id);
+      const { status, notes, expectedDeliveryDate, totalCost } = req.body;
+      
+      const updateData: Record<string, any> = {};
+      if (status) {
+        updateData.status = status;
+        if (status === "submitted") updateData.submittedAt = new Date();
+        if (status === "received") updateData.receivedAt = new Date();
+      }
+      if (notes !== undefined) updateData.notes = notes;
+      if (expectedDeliveryDate) updateData.expectedDeliveryDate = new Date(expectedDeliveryDate);
+      if (totalCost !== undefined) updateData.totalCost = totalCost;
+      
+      const order = await storage.updateOrder(orderId, updateData);
+      if (!order) {
+        return res.status(404).json({ error: "Order not found" });
+      }
+      
+      return res.json(order);
+    } catch (error) {
+      console.error("Update order error:", error);
+      return res.status(500).json({ error: "Internal server error" });
+    }
+  });
+
+  // ========================
+  // Order Items Routes
+  // ========================
+
+  app.get("/api/orders/:orderId/items", async (req: Request, res: Response) => {
+    try {
+      const orderId = parseInt(req.params.orderId);
+      const items = await storage.getOrderItems(orderId);
+      return res.json(items);
+    } catch (error) {
+      console.error("Get order items error:", error);
+      return res.status(500).json({ error: "Internal server error" });
+    }
+  });
+
+  app.post("/api/orders/:orderId/items", async (req: Request, res: Response) => {
+    try {
+      const orderId = parseInt(req.params.orderId);
+      const { productId, quantity, unitType, unitCost, note, sourceFlagId } = req.body;
+      
+      if (!productId) {
+        return res.status(400).json({ error: "Product ID is required" });
+      }
+      
+      const item = await storage.createOrderItem({
+        orderId,
+        productId,
+        quantity: quantity || 1,
+        unitType: unitType || "keg",
+        unitCost: unitCost || null,
+        note: note || null,
+        sourceFlagId: sourceFlagId || null,
+      });
+      
+      if (sourceFlagId) {
+        await storage.resolveReorderFlag(sourceFlagId, orderId);
+      }
+      
+      return res.status(201).json(item);
+    } catch (error) {
+      console.error("Create order item error:", error);
+      return res.status(500).json({ error: "Internal server error" });
+    }
+  });
+
+  app.patch("/api/order-items/:id", async (req: Request, res: Response) => {
+    try {
+      const itemId = parseInt(req.params.id);
+      const { quantity, unitType, unitCost, note } = req.body;
+      
+      const updateData: Record<string, any> = {};
+      if (quantity !== undefined) updateData.quantity = quantity;
+      if (unitType) updateData.unitType = unitType;
+      if (unitCost !== undefined) updateData.unitCost = unitCost;
+      if (note !== undefined) updateData.note = note;
+      
+      const item = await storage.updateOrderItem(itemId, updateData);
+      if (!item) {
+        return res.status(404).json({ error: "Order item not found" });
+      }
+      
+      return res.json(item);
+    } catch (error) {
+      console.error("Update order item error:", error);
+      return res.status(500).json({ error: "Internal server error" });
+    }
+  });
+
+  app.delete("/api/order-items/:id", async (req: Request, res: Response) => {
+    try {
+      const itemId = parseInt(req.params.id);
+      await storage.deleteOrderItem(itemId);
+      return res.status(204).send();
+    } catch (error) {
+      console.error("Delete order item error:", error);
+      return res.status(500).json({ error: "Internal server error" });
+    }
+  });
+
+  // ========================
   // GoTab Sales Integration Routes (Admin/Owner Only)
   // ========================
   

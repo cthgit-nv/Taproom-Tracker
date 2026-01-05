@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { useAuth } from "@/lib/auth-context";
 import { useLocation } from "wouter";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useMutation } from "@tanstack/react-query";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -29,8 +29,11 @@ import {
   Settings,
   Filter,
   MapPin,
+  Flag,
 } from "lucide-react";
 import { Link } from "wouter";
+import { apiRequest, queryClient } from "@/lib/queryClient";
+import { useToast } from "@/hooks/use-toast";
 import type { Keg, Product, Tap, Distributor, BeverageType } from "@shared/schema";
 
 const BEVERAGE_TYPES: { value: BeverageType; label: string }[] = [
@@ -45,6 +48,7 @@ const BEVERAGE_TYPES: { value: BeverageType; label: string }[] = [
 export default function KegsPage() {
   const { user } = useAuth();
   const [, setLocation] = useLocation();
+  const { toast } = useToast();
 
   const [showFilters, setShowFilters] = useState(false);
   const [filterBrand, setFilterBrand] = useState<string>("all");
@@ -66,6 +70,20 @@ export default function KegsPage() {
 
   const { data: distributors = [] } = useQuery<Distributor[]>({
     queryKey: ["/api/distributors"],
+  });
+
+  const flagForReorderMutation = useMutation({
+    mutationFn: async (data: { productId: number; kegId?: number; reason?: string }) => {
+      const res = await apiRequest("POST", "/api/reorder-flags", data);
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/reorder-flags"] });
+      toast({ title: "Flagged for reorder", description: "Added to order queue" });
+    },
+    onError: () => {
+      toast({ title: "Error", description: "Failed to flag for reorder", variant: "destructive" });
+    },
   });
 
   if (!user) {
@@ -287,6 +305,24 @@ export default function KegsPage() {
                           {keg.dateTapped && (
                             <span>Tapped {new Date(keg.dateTapped).toLocaleDateString()}</span>
                           )}
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              flagForReorderMutation.mutate({ 
+                                productId: keg.productId, 
+                                kegId: keg.id,
+                                reason: percent < 25 ? "Low level" : undefined
+                              });
+                            }}
+                            disabled={flagForReorderMutation.isPending}
+                            className="text-[#D4AF37] h-6 px-2"
+                            data-testid={`button-flag-reorder-${keg.id}`}
+                          >
+                            <Flag className="w-3 h-3 mr-1" />
+                            Flag
+                          </Button>
                         </div>
                       </div>
                     </CardContent>
@@ -361,7 +397,7 @@ export default function KegsPage() {
           <NavItem icon={Home} label="Dashboard" href="/dashboard" />
           <NavItem icon={Package} label="Products" href="/products" />
           <NavItem icon={Beer} label="Kegs" active />
-          <NavItem icon={ShoppingCart} label="Orders" href="/smart-order" />
+          <NavItem icon={ShoppingCart} label="Orders" href="/orders" />
           <NavItem icon={Settings} label="Settings" href="/settings" />
         </div>
       </nav>

@@ -154,6 +154,53 @@ export const receivingLogs = pgTable("receiving_logs", {
   isSimulation: boolean("is_simulation").notNull().default(false),
 });
 
+// Order status enum
+export const orderStatusEnum = ["draft", "submitted", "confirmed", "partially_received", "received", "cancelled"] as const;
+export type OrderStatus = typeof orderStatusEnum[number];
+
+// Unit type for order items
+export const unitTypeEnum = ["keg", "case", "each"] as const;
+export type UnitType = typeof unitTypeEnum[number];
+
+// Reorder Flags table - staff can flag products that need reordering
+export const reorderFlags = pgTable("reorder_flags", {
+  id: integer("id").primaryKey().generatedAlwaysAsIdentity(),
+  productId: integer("product_id").references(() => products.id).notNull(),
+  kegId: integer("keg_id").references(() => kegs.id),
+  flaggedById: integer("flagged_by_id").references(() => users.id).notNull(),
+  reason: text("reason"),
+  suggestedQuantity: integer("suggested_quantity").default(1),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  resolvedAt: timestamp("resolved_at"),
+  orderId: integer("order_id"),
+});
+
+// Orders table - purchase orders grouped by distributor
+export const orders = pgTable("orders", {
+  id: integer("id").primaryKey().generatedAlwaysAsIdentity(),
+  distributorId: integer("distributor_id").references(() => distributors.id).notNull(),
+  status: text("status", { enum: orderStatusEnum }).notNull().default("draft"),
+  createdById: integer("created_by_id").references(() => users.id).notNull(),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  submittedAt: timestamp("submitted_at"),
+  expectedDeliveryDate: timestamp("expected_delivery_date"),
+  receivedAt: timestamp("received_at"),
+  notes: text("notes"),
+  totalCost: decimal("total_cost", { precision: 10, scale: 2 }),
+});
+
+// Order Items table - line items within an order
+export const orderItems = pgTable("order_items", {
+  id: integer("id").primaryKey().generatedAlwaysAsIdentity(),
+  orderId: integer("order_id").references(() => orders.id).notNull(),
+  productId: integer("product_id").references(() => products.id).notNull(),
+  quantity: integer("quantity").notNull().default(1),
+  unitType: text("unit_type", { enum: unitTypeEnum }).notNull().default("keg"),
+  unitCost: decimal("unit_cost", { precision: 10, scale: 2 }),
+  note: text("note"),
+  sourceFlagId: integer("source_flag_id").references(() => reorderFlags.id),
+});
+
 // ==========================================
 // RELATIONS (All relations after tables)
 // ==========================================
@@ -230,6 +277,53 @@ export const receivingLogsRelations = relations(receivingLogs, ({ one }) => ({
   }),
 }));
 
+export const reorderFlagsRelations = relations(reorderFlags, ({ one }) => ({
+  product: one(products, {
+    fields: [reorderFlags.productId],
+    references: [products.id],
+  }),
+  keg: one(kegs, {
+    fields: [reorderFlags.kegId],
+    references: [kegs.id],
+  }),
+  flaggedBy: one(users, {
+    fields: [reorderFlags.flaggedById],
+    references: [users.id],
+  }),
+  order: one(orders, {
+    fields: [reorderFlags.orderId],
+    references: [orders.id],
+  }),
+}));
+
+export const ordersRelations = relations(orders, ({ one, many }) => ({
+  distributor: one(distributors, {
+    fields: [orders.distributorId],
+    references: [distributors.id],
+  }),
+  createdBy: one(users, {
+    fields: [orders.createdById],
+    references: [users.id],
+  }),
+  items: many(orderItems),
+  flags: many(reorderFlags),
+}));
+
+export const orderItemsRelations = relations(orderItems, ({ one }) => ({
+  order: one(orders, {
+    fields: [orderItems.orderId],
+    references: [orders.id],
+  }),
+  product: one(products, {
+    fields: [orderItems.productId],
+    references: [products.id],
+  }),
+  sourceFlag: one(reorderFlags, {
+    fields: [orderItems.sourceFlagId],
+    references: [reorderFlags.id],
+  }),
+}));
+
 // ==========================================
 // INSERT SCHEMAS
 // ==========================================
@@ -244,6 +338,9 @@ export const insertZoneSchema = createInsertSchema(zones).omit({ id: true });
 export const insertInventorySessionSchema = createInsertSchema(inventorySessions).omit({ id: true, startedAt: true });
 export const insertInventoryCountSchema = createInsertSchema(inventoryCounts).omit({ id: true, countedAt: true });
 export const insertReceivingLogSchema = createInsertSchema(receivingLogs).omit({ id: true, receivedAt: true });
+export const insertReorderFlagSchema = createInsertSchema(reorderFlags).omit({ id: true, createdAt: true });
+export const insertOrderSchema = createInsertSchema(orders).omit({ id: true, createdAt: true });
+export const insertOrderItemSchema = createInsertSchema(orderItems).omit({ id: true });
 
 // ==========================================
 // TYPES
@@ -278,6 +375,15 @@ export type InventoryCount = typeof inventoryCounts.$inferSelect;
 
 export type InsertReceivingLog = z.infer<typeof insertReceivingLogSchema>;
 export type ReceivingLog = typeof receivingLogs.$inferSelect;
+
+export type InsertReorderFlag = z.infer<typeof insertReorderFlagSchema>;
+export type ReorderFlag = typeof reorderFlags.$inferSelect;
+
+export type InsertOrder = z.infer<typeof insertOrderSchema>;
+export type Order = typeof orders.$inferSelect;
+
+export type InsertOrderItem = z.infer<typeof insertOrderItemSchema>;
+export type OrderItem = typeof orderItems.$inferSelect;
 
 // ==========================================
 // VALIDATION SCHEMAS
