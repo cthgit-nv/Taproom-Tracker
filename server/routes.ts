@@ -352,6 +352,37 @@ export async function registerRoutes(
     }
   });
 
+  app.patch("/api/kegs/:id", async (req: Request, res: Response) => {
+    try {
+      if (!req.session.userId) {
+        return res.status(401).json({ error: "Not authenticated" });
+      }
+      
+      const id = parseInt(req.params.id, 10);
+      if (isNaN(id)) {
+        return res.status(400).json({ error: "Invalid keg ID" });
+      }
+      
+      const { status, remainingVolOz, dateTapped, dateKicked } = req.body;
+      
+      const updateData: Record<string, any> = {};
+      if (status) updateData.status = status;
+      if (remainingVolOz !== undefined) updateData.remainingVolOz = remainingVolOz;
+      if (dateTapped !== undefined) updateData.dateTapped = dateTapped ? new Date(dateTapped) : null;
+      if (dateKicked !== undefined) updateData.dateKicked = dateKicked ? new Date(dateKicked) : null;
+      
+      const keg = await storage.updateKeg(id, updateData);
+      if (!keg) {
+        return res.status(404).json({ error: "Keg not found" });
+      }
+      
+      return res.json(keg);
+    } catch (error) {
+      console.error("Update keg error:", error);
+      return res.status(500).json({ error: "Internal server error" });
+    }
+  });
+
   // Get keg inventory summary for a product (tapped and on_deck kegs)
   app.get("/api/kegs/product/:productId/summary", async (req: Request, res: Response) => {
     try {

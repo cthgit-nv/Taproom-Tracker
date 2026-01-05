@@ -86,6 +86,41 @@ export default function KegsPage() {
     },
   });
 
+  const tapKegMutation = useMutation({
+    mutationFn: async (kegId: number) => {
+      const res = await apiRequest("PATCH", `/api/kegs/${kegId}`, {
+        status: "tapped",
+        dateTapped: new Date().toISOString(),
+      });
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/kegs"] });
+      toast({ title: "Keg tapped", description: "Moved to On Tap section" });
+    },
+    onError: () => {
+      toast({ title: "Error", description: "Failed to tap keg", variant: "destructive" });
+    },
+  });
+
+  const kickKegMutation = useMutation({
+    mutationFn: async (kegId: number) => {
+      const res = await apiRequest("PATCH", `/api/kegs/${kegId}`, {
+        status: "kicked",
+        dateKicked: new Date().toISOString(),
+        remainingVolOz: 0,
+      });
+      return res.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/kegs"] });
+      toast({ title: "Keg kicked", description: "Marked as empty" });
+    },
+    onError: () => {
+      toast({ title: "Error", description: "Failed to kick keg", variant: "destructive" });
+    },
+  });
+
   if (!user) {
     setLocation("/");
     return null;
@@ -352,37 +387,41 @@ export default function KegsPage() {
             </Card>
           ) : (
             <div className="space-y-2">
-              {Object.entries(
-                filteredOnDeckKegs.reduce<Record<number, Keg[]>>((acc, keg) => {
-                  if (!acc[keg.productId]) acc[keg.productId] = [];
-                  acc[keg.productId].push(keg);
-                  return acc;
-                }, {})
-              ).map(([productId, productKegs]) => {
-                const product = getProduct(Number(productId));
+              {filteredOnDeckKegs.map((keg) => {
+                const product = getProduct(keg.productId);
                 return (
                   <Card 
-                    key={productId}
+                    key={keg.id}
                     className="bg-[#0a2419] border-[#1A4D2E]"
-                    data-testid={`card-keg-ondeck-${productId}`}
+                    data-testid={`card-keg-ondeck-${keg.id}`}
                   >
                     <CardContent className="p-3 flex items-center justify-between gap-2 flex-wrap">
-                      <div className="flex items-center gap-2">
-                        <span className="text-white truncate max-w-[150px]">
+                      <div className="flex items-center gap-2 flex-1 min-w-0">
+                        <span className="text-white truncate">
                           {product?.name || "Unknown"}
                         </span>
                         {product?.isLocal && (
-                          <MapPin className="w-4 h-4 text-[#D4AF37]" />
+                          <MapPin className="w-4 h-4 text-[#D4AF37] flex-shrink-0" />
                         )}
                         {product?.style && (
-                          <Badge variant="outline" className="text-xs border-[#1A4D2E] text-white/40">
+                          <Badge variant="outline" className="text-xs border-[#1A4D2E] text-white/40 flex-shrink-0">
                             {product.style}
                           </Badge>
                         )}
                       </div>
-                      <Badge className="bg-[#D4AF37]/20 text-[#D4AF37] border-[#D4AF37]/50">
-                        {productKegs.length} keg{productKegs.length !== 1 ? "s" : ""}
-                      </Badge>
+                      <div className="flex items-center gap-2 flex-shrink-0">
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() => tapKegMutation.mutate(keg.id)}
+                          disabled={tapKegMutation.isPending}
+                          className="border-blue-500 text-blue-400"
+                          data-testid={`button-tap-keg-${keg.id}`}
+                        >
+                          <Droplet className="w-3 h-3 mr-1" />
+                          Tap
+                        </Button>
+                      </div>
                     </CardContent>
                   </Card>
                 );

@@ -193,33 +193,41 @@ export default function InventorySessionPage() {
     }
   }, [authLoading, isAuthenticated, setLocation]);
 
-  // Parse URL params for zone or view mode
+  // Parse URL params for zone or view mode - re-run when URL changes
   useEffect(() => {
-    const params = new URLSearchParams(window.location.search);
-    const zoneParam = params.get("zone");
-    const viewParam = params.get("view");
+    const parseUrlParams = () => {
+      const params = new URLSearchParams(window.location.search);
+      const zoneParam = params.get("zone");
+      const viewParam = params.get("view");
+      
+      if (viewParam) {
+        const sessionId = parseInt(viewParam);
+        if (!isNaN(sessionId)) {
+          setViewSessionId(sessionId);
+          setMode("view-completed");
+          fetch(`/api/inventory/sessions/${sessionId}`, { credentials: "include" })
+            .then(res => res.json())
+            .then(data => {
+              if (data.session) {
+                setViewSessionData(data);
+              }
+            })
+            .catch(console.error);
+        }
+      } else if (zoneParam) {
+        const zoneId = parseInt(zoneParam);
+        if (!isNaN(zoneId)) {
+          setAutoStartZone(zoneId);
+        }
+      }
+    };
     
-    if (viewParam) {
-      const sessionId = parseInt(viewParam);
-      if (!isNaN(sessionId)) {
-        setViewSessionId(sessionId);
-        setMode("view-completed");
-        // Fetch the session data
-        fetch(`/api/inventory/sessions/${sessionId}`, { credentials: "include" })
-          .then(res => res.json())
-          .then(data => {
-            if (data.session) {
-              setViewSessionData(data);
-            }
-          })
-          .catch(console.error);
-      }
-    } else if (zoneParam) {
-      const zoneId = parseInt(zoneParam);
-      if (!isNaN(zoneId)) {
-        setAutoStartZone(zoneId);
-      }
-    }
+    parseUrlParams();
+    
+    // Listen for popstate events (back/forward navigation)
+    const handlePopState = () => parseUrlParams();
+    window.addEventListener("popstate", handlePopState);
+    return () => window.removeEventListener("popstate", handlePopState);
   }, []);
 
   // Auto-start session when zone param is provided
@@ -1471,7 +1479,16 @@ export default function InventorySessionPage() {
 
             <div className="fixed bottom-0 left-0 right-0 p-4 bg-[#051a11] border-t border-[#1A4D2E]">
               <Button
-                onClick={() => setLocation(`/inventory?zone=${viewSessionData.session.zoneId}`)}
+                onClick={() => {
+                  const zoneId = viewSessionData.session.zoneId;
+                  setViewSessionId(null);
+                  setViewSessionData(null);
+                  setMode("setup");
+                  setSelectedZone(zoneId);
+                  setCounts(new Map());
+                  setActiveSession(null);
+                  setAutoStartZone(zoneId);
+                }}
                 className="w-full h-14 bg-[#1A4D2E] text-[#D4AF37] border-2 border-[#D4AF37] text-lg font-semibold"
                 data-testid="button-start-new-count"
               >
