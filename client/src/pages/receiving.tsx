@@ -28,56 +28,82 @@ import { untappdService, type UntappdBeer } from "@/services/UntappdService";
 type Mode = "scanning" | "known_product" | "new_product";
 
 // Helper to normalize Barcode Spider category to our beverage types
-function normalizeBeverageType(category: string | undefined): string {
-  if (!category) return "beer";
-  
-  const lowerCategory = category.toLowerCase();
+// Uses both category and parentCategory for better detection
+function normalizeBeverageType(category: string | undefined, parentCategory?: string): string {
+  const categoryStr = (category || "").toLowerCase();
+  const parentStr = (parentCategory || "").toLowerCase();
+  const combined = `${categoryStr} ${parentStr}`;
   
   // Wine detection
-  if (lowerCategory.includes("wine") || lowerCategory.includes("champagne") || 
-      lowerCategory.includes("prosecco") || lowerCategory.includes("merlot") ||
-      lowerCategory.includes("cabernet") || lowerCategory.includes("chardonnay")) {
+  if (combined.includes("wine") || combined.includes("champagne") || 
+      combined.includes("prosecco") || combined.includes("merlot") ||
+      combined.includes("cabernet") || combined.includes("chardonnay")) {
     return "wine";
   }
   
-  // Liquor/spirits detection
-  if (lowerCategory.includes("whiskey") || lowerCategory.includes("whisky") ||
-      lowerCategory.includes("bourbon") || lowerCategory.includes("vodka") ||
-      lowerCategory.includes("gin") || lowerCategory.includes("rum") ||
-      lowerCategory.includes("tequila") || lowerCategory.includes("brandy") ||
-      lowerCategory.includes("liquor") || lowerCategory.includes("spirit") ||
-      lowerCategory.includes("scotch") || lowerCategory.includes("cognac")) {
+  // Liquor/spirits detection - check for "Wines & Spirits" parent category
+  if (combined.includes("whiskey") || combined.includes("whisky") ||
+      combined.includes("bourbon") || combined.includes("vodka") ||
+      combined.includes("gin") || combined.includes("rum") ||
+      combined.includes("tequila") || combined.includes("brandy") ||
+      combined.includes("liquor") || combined.includes("spirit") ||
+      combined.includes("scotch") || combined.includes("cognac") ||
+      combined.includes("liqueur") || combined.includes("mezcal") ||
+      parentStr.includes("spirits")) {
     return "spirits";
   }
   
   // Kombucha
-  if (lowerCategory.includes("kombucha")) {
+  if (combined.includes("kombucha")) {
     return "kombucha";
   }
   
   // Cider detection
-  if (lowerCategory.includes("cider")) {
+  if (combined.includes("cider")) {
     return "cider";
   }
   
   // Non-alcoholic / Seltzer detection
-  if (lowerCategory.includes("seltzer") || lowerCategory.includes("non-alcoholic") ||
-      lowerCategory.includes("non alcoholic") || lowerCategory.includes("n/a") ||
-      lowerCategory.includes("soda") || lowerCategory.includes("water") ||
-      lowerCategory.includes("juice") || lowerCategory.includes("soft drink")) {
+  if (combined.includes("seltzer") || combined.includes("non-alcoholic") ||
+      combined.includes("non alcoholic") || combined.includes("n/a") ||
+      combined.includes("soda") || combined.includes("water") ||
+      combined.includes("juice") || combined.includes("soft drink") ||
+      combined.includes("energy drink")) {
     return "na";
   }
   
   // Beer detection (default for most alcoholic beverages)
-  if (lowerCategory.includes("beer") || lowerCategory.includes("ale") ||
-      lowerCategory.includes("lager") || lowerCategory.includes("stout") ||
-      lowerCategory.includes("ipa") || lowerCategory.includes("pilsner") ||
-      lowerCategory.includes("porter") || lowerCategory.includes("malt")) {
+  if (combined.includes("beer") || combined.includes("ale") ||
+      combined.includes("lager") || combined.includes("stout") ||
+      combined.includes("ipa") || combined.includes("pilsner") ||
+      combined.includes("porter") || combined.includes("malt")) {
     return "beer";
   }
   
   // Default to beer for unknown categories
   return "beer";
+}
+
+// Helper to extract spirit style from Barcode Spider category
+function getSpiritStyle(category: string | undefined): string | undefined {
+  if (!category) return undefined;
+  const lowerCategory = category.toLowerCase();
+  
+  if (lowerCategory.includes("whiskey") || lowerCategory.includes("whisky")) return "Whiskey";
+  if (lowerCategory.includes("bourbon")) return "Bourbon";
+  if (lowerCategory.includes("scotch")) return "Scotch";
+  if (lowerCategory.includes("vodka")) return "Vodka";
+  if (lowerCategory.includes("gin")) return "Gin";
+  if (lowerCategory.includes("rum")) return "Rum";
+  if (lowerCategory.includes("tequila")) return "Tequila";
+  if (lowerCategory.includes("mezcal")) return "Mezcal";
+  if (lowerCategory.includes("brandy")) return "Brandy";
+  if (lowerCategory.includes("cognac")) return "Cognac";
+  if (lowerCategory.includes("liqueur")) return "Liqueur";
+  if (lowerCategory.includes("vermouth")) return "Vermouth";
+  if (lowerCategory.includes("amaro")) return "Amaro";
+  
+  return undefined;
 }
 
 export default function ReceivingPage() {
@@ -263,14 +289,23 @@ export default function ReceivingPage() {
               // Pre-fill form with Barcode Spider data
               setNewProductName(barcodeData.title);
               
-              // Map brand from Barcode Spider
-              if (barcodeData.brand) {
-                setNewProductBrand(barcodeData.brand);
+              // Map brand from Barcode Spider - prefer brand, fallback to manufacturer
+              const brandValue = barcodeData.brand || barcodeData.manufacturer || "";
+              if (brandValue) {
+                setNewProductBrand(brandValue);
               }
               
-              // Map category to beverageType
-              const beverageType = normalizeBeverageType(barcodeData.category);
+              // Map category to beverageType using both category and parentCategory
+              const beverageType = normalizeBeverageType(barcodeData.category, barcodeData.parentCategory);
               setNewProductBeverageType(beverageType);
+              
+              // For spirits, set the style from the category
+              if (beverageType === "spirits") {
+                const spiritStyle = getSpiritStyle(barcodeData.category);
+                if (spiritStyle) {
+                  setNewProductStyle(spiritStyle);
+                }
+              }
               
               // Also use description if available
               if (barcodeData.description) {
@@ -279,7 +314,7 @@ export default function ReceivingPage() {
               
               toast({
                 title: "Product Found",
-                description: `Found: ${barcodeData.title}${barcodeData.brand ? ` by ${barcodeData.brand}` : ""}`,
+                description: `Found: ${barcodeData.title}${brandValue ? ` by ${brandValue}` : ""}`,
               });
             } else {
               toast({

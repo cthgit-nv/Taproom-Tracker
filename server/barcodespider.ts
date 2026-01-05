@@ -8,9 +8,12 @@ export interface BarcodeSpiderProduct {
   upc: string;
   title: string;
   brand?: string;
+  manufacturer?: string;
   description?: string;
   category?: string;
+  parentCategory?: string;
   imageUrl?: string;
+  model?: string;
 }
 
 export interface BarcodeSpiderResponse {
@@ -21,11 +24,19 @@ export interface BarcodeSpiderResponse {
   };
   item_attributes?: {
     upc: string;
+    ean?: string;
     title: string;
     brand?: string;
+    manufacturer?: string;
     description?: string;
     category?: string;
+    parent_category?: string;
     image?: string;
+    model?: string;
+    mpn?: string;
+    color?: string;
+    size?: string;
+    weight?: string;
   };
 }
 
@@ -86,9 +97,12 @@ export async function lookupUpc(upc: string): Promise<BarcodeSpiderProduct | nul
       upc: attrs.upc || cleanUpc,
       title: attrs.title || "Unknown Product",
       brand: attrs.brand || undefined,
+      manufacturer: attrs.manufacturer || undefined,
       description: attrs.description || undefined,
       category: attrs.category || undefined,
+      parentCategory: attrs.parent_category || undefined,
       imageUrl: attrs.image || undefined,
+      model: attrs.model || undefined,
     };
   } catch (error) {
     console.error("Barcode Spider lookup error:", error);
