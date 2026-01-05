@@ -1518,6 +1518,7 @@ function ScanModeContent({
   const [cameraError, setCameraError] = useState<string | null>(null);
   const [scannerReady, setScannerReady] = useState(false);
   const scannerRef = useRef<Html5Qrcode | null>(null);
+  const scannerRunningRef = useRef(false);
   const lastScannedCodeRef = useRef<string | null>(null);
   const scanTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const scannerContainerId = "qr-scanner-container";
@@ -1578,12 +1579,20 @@ function ScanModeContent({
   }, [displayProducts, handleSelectProduct, toast]);
   
   useEffect(() => {
-    if (!useCameraScanner) {
-      if (scannerRef.current) {
-        scannerRef.current.stop().catch(() => {});
-        scannerRef.current = null;
-        setScannerReady(false);
+    const stopScanner = async () => {
+      if (scannerRef.current && scannerRunningRef.current) {
+        try {
+          await scannerRef.current.stop();
+        } catch {
+        }
+        scannerRunningRef.current = false;
       }
+      scannerRef.current = null;
+      setScannerReady(false);
+    };
+    
+    if (!useCameraScanner) {
+      stopScanner();
       return;
     }
     
@@ -1595,9 +1604,7 @@ function ScanModeContent({
           return;
         }
         
-        if (scannerRef.current) {
-          await scannerRef.current.stop().catch(() => {});
-        }
+        await stopScanner();
         
         const scanner = new Html5Qrcode(scannerContainerId);
         scannerRef.current = scanner;
@@ -1615,10 +1622,12 @@ function ScanModeContent({
           () => {}
         );
         
+        scannerRunningRef.current = true;
         setScannerReady(true);
         setCameraError(null);
       } catch (err) {
         console.error("Camera error:", err);
+        scannerRunningRef.current = false;
         const message = err instanceof Error ? err.message : "Camera access denied";
         setCameraError(message.includes("Permission") ? "Camera permission denied. Please allow camera access." : "Could not start camera. Try manual entry.");
         setScannerReady(false);
@@ -1628,10 +1637,7 @@ function ScanModeContent({
     startScanner();
     
     return () => {
-      if (scannerRef.current) {
-        scannerRef.current.stop().catch(() => {});
-        scannerRef.current = null;
-      }
+      stopScanner();
       if (scanTimeoutRef.current) {
         clearTimeout(scanTimeoutRef.current);
       }
