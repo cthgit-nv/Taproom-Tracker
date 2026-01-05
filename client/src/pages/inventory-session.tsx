@@ -1,4 +1,5 @@
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
+import { Html5Qrcode } from "html5-qrcode";
 import { useLocation } from "wouter";
 import { useAuth } from "@/lib/auth-context";
 import { useQuery, useMutation } from "@tanstack/react-query";
@@ -1513,6 +1514,130 @@ function ScanModeContent({
   const [newProductSizeMl, setNewProductSizeMl] = useState("750");
   const [newProductBeverageType, setNewProductBeverageType] = useState("beer");
   
+  const [useCameraScanner, setUseCameraScanner] = useState(true);
+  const [cameraError, setCameraError] = useState<string | null>(null);
+  const [scannerReady, setScannerReady] = useState(false);
+  const scannerRef = useRef<Html5Qrcode | null>(null);
+  const lastScannedCodeRef = useRef<string | null>(null);
+  const scanTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  const scannerContainerId = "qr-scanner-container";
+  
+  const handleScannedCode = useCallback(async (code: string) => {
+    if (code === lastScannedCodeRef.current) return;
+    lastScannedCodeRef.current = code;
+    
+    const normalizedCode = code.replace(/[-\s]/g, "");
+    const existingProduct = displayProducts.find((p) => p.upc && p.upc.replace(/[-\s]/g, "") === normalizedCode);
+    
+    if (existingProduct) {
+      toast({ title: "Product found", description: existingProduct.name });
+      handleSelectProduct(existingProduct);
+    } else {
+      setSearchQuery(normalizedCode);
+      try {
+        const response = await fetch(`/api/barcodespider/lookup/${normalizedCode}`, {
+          credentials: "include",
+        });
+        if (response.ok) {
+          const data = await response.json();
+          if (data) {
+            setUpcLookupResult(data);
+            setNewProductName(data.title || "");
+            setNewProductUpc(data.upc || normalizedCode);
+            if (data.size) {
+              const mlMatch = data.size.match(/(\d+)\s*ml/i);
+              const ozMatch = data.size.match(/(\d+(?:\.\d+)?)\s*(?:fl\s*)?oz/i);
+              const lMatch = data.size.match(/(\d+(?:\.\d+)?)\s*L/i);
+              if (mlMatch) setNewProductSizeMl(mlMatch[1]);
+              else if (ozMatch) setNewProductSizeMl(String(Math.round(parseFloat(ozMatch[1]) * 29.574)));
+              else if (lMatch) setNewProductSizeMl(String(Math.round(parseFloat(lMatch[1]) * 1000)));
+            }
+            setShowAddProduct(true);
+          } else {
+            setNewProductUpc(normalizedCode);
+            setNewProductName("");
+            setShowAddProduct(true);
+            toast({ title: "New product", description: "UPC not in database - enter details" });
+          }
+        } else {
+          setNewProductUpc(normalizedCode);
+          setShowAddProduct(true);
+        }
+      } catch {
+        setNewProductUpc(normalizedCode);
+        setShowAddProduct(true);
+      }
+    }
+    
+    if (scanTimeoutRef.current) {
+      clearTimeout(scanTimeoutRef.current);
+    }
+    scanTimeoutRef.current = setTimeout(() => {
+      lastScannedCodeRef.current = null;
+    }, 3000);
+  }, [displayProducts, handleSelectProduct, toast]);
+  
+  useEffect(() => {
+    if (!useCameraScanner) {
+      if (scannerRef.current) {
+        scannerRef.current.stop().catch(() => {});
+        scannerRef.current = null;
+        setScannerReady(false);
+      }
+      return;
+    }
+    
+    const startScanner = async () => {
+      try {
+        const container = document.getElementById(scannerContainerId);
+        if (!container) {
+          setTimeout(startScanner, 100);
+          return;
+        }
+        
+        if (scannerRef.current) {
+          await scannerRef.current.stop().catch(() => {});
+        }
+        
+        const scanner = new Html5Qrcode(scannerContainerId);
+        scannerRef.current = scanner;
+        
+        await scanner.start(
+          { facingMode: "environment" },
+          {
+            fps: 10,
+            qrbox: { width: 250, height: 150 },
+            aspectRatio: 1.333,
+          },
+          (decodedText) => {
+            handleScannedCode(decodedText);
+          },
+          () => {}
+        );
+        
+        setScannerReady(true);
+        setCameraError(null);
+      } catch (err) {
+        console.error("Camera error:", err);
+        const message = err instanceof Error ? err.message : "Camera access denied";
+        setCameraError(message.includes("Permission") ? "Camera permission denied. Please allow camera access." : "Could not start camera. Try manual entry.");
+        setScannerReady(false);
+      }
+    };
+    
+    startScanner();
+    
+    return () => {
+      if (scannerRef.current) {
+        scannerRef.current.stop().catch(() => {});
+        scannerRef.current = null;
+      }
+      if (scanTimeoutRef.current) {
+        clearTimeout(scanTimeoutRef.current);
+      }
+    };
+  }, [useCameraScanner, handleScannedCode]);
+  
   const cleanUpc = (query: string) => query.replace(/[-\s]/g, "");
   const isUpc = (query: string) => /^\d{8,14}$/.test(cleanUpc(query));
   
@@ -1659,32 +1784,92 @@ function ScanModeContent({
         </Card>
       )}
 
-      <Card className="bg-[#0a2419] border-2 border-[#D4AF37]">
-        <CardContent className="p-4 space-y-3">
-          <Label className="text-[#D4AF37] font-medium">Scan or Search Product</Label>
-          <div className="flex gap-2">
-            <Input
-              type="text"
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              onKeyDown={(e) => e.key === "Enter" && handleSearch()}
-              placeholder="Type UPC or product name..."
-              className="flex-1 bg-[#051a11] border-[#1A4D2E] text-white h-12 text-lg"
-              autoFocus
-              data-testid="input-scan-search"
-            />
-            <Button
-              onClick={handleSearch}
-              disabled={isSearching || !searchQuery.trim()}
-              className="h-12 px-6 bg-[#D4AF37] text-[#051a11]"
-              data-testid="button-search-product"
-            >
-              {isSearching ? <Loader2 className="w-5 h-5 animate-spin" /> : <Camera className="w-5 h-5" />}
-            </Button>
-          </div>
-          <p className="text-xs text-white/40">Enter UPC barcode or start typing product name</p>
-        </CardContent>
-      </Card>
+      <div className="flex gap-2 mb-2">
+        <Button
+          variant={useCameraScanner ? "default" : "outline"}
+          onClick={() => setUseCameraScanner(true)}
+          className={useCameraScanner ? "flex-1 bg-[#D4AF37] text-[#051a11]" : "flex-1 border-[#1A4D2E] text-white/60"}
+          data-testid="button-use-camera"
+        >
+          <Camera className="w-4 h-4 mr-2" />
+          Camera
+        </Button>
+        <Button
+          variant={!useCameraScanner ? "default" : "outline"}
+          onClick={() => setUseCameraScanner(false)}
+          className={!useCameraScanner ? "flex-1 bg-[#D4AF37] text-[#051a11]" : "flex-1 border-[#1A4D2E] text-white/60"}
+          data-testid="button-use-text"
+        >
+          <List className="w-4 h-4 mr-2" />
+          Type
+        </Button>
+      </div>
+
+      {useCameraScanner ? (
+        <Card className="bg-[#0a2419] border-2 border-[#D4AF37] overflow-hidden">
+          <CardContent className="p-0">
+            {cameraError ? (
+              <div className="aspect-[4/3] bg-black flex flex-col items-center justify-center p-4">
+                <AlertTriangle className="w-12 h-12 text-orange-400 mb-3" />
+                <p className="text-orange-300 text-center text-sm mb-3">{cameraError}</p>
+                <Button
+                  variant="outline"
+                  onClick={() => setUseCameraScanner(false)}
+                  className="border-[#D4AF37] text-[#D4AF37]"
+                >
+                  Use Manual Entry
+                </Button>
+              </div>
+            ) : (
+              <div className="relative">
+                <div id={scannerContainerId} className="w-full aspect-[4/3]" />
+                {!scannerReady && (
+                  <div className="absolute inset-0 bg-black flex items-center justify-center">
+                    <div className="text-center">
+                      <Loader2 className="w-8 h-8 text-[#D4AF37] animate-spin mx-auto mb-2" />
+                      <p className="text-white/60 text-sm">Starting camera...</p>
+                    </div>
+                  </div>
+                )}
+                {scannerReady && (
+                  <div className="absolute bottom-2 left-0 right-0 text-center">
+                    <Badge className="bg-green-500/80 text-white">
+                      Point at barcode
+                    </Badge>
+                  </div>
+                )}
+              </div>
+            )}
+          </CardContent>
+        </Card>
+      ) : (
+        <Card className="bg-[#0a2419] border-2 border-[#D4AF37]">
+          <CardContent className="p-4 space-y-3">
+            <Label className="text-[#D4AF37] font-medium">Search Product</Label>
+            <div className="flex gap-2">
+              <Input
+                type="text"
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                onKeyDown={(e) => e.key === "Enter" && handleSearch()}
+                placeholder="Type UPC or product name..."
+                className="flex-1 bg-[#051a11] border-[#1A4D2E] text-white h-12 text-lg"
+                autoFocus
+                data-testid="input-scan-search"
+              />
+              <Button
+                onClick={handleSearch}
+                disabled={isSearching || !searchQuery.trim()}
+                className="h-12 px-6 bg-[#D4AF37] text-[#051a11]"
+                data-testid="button-search-product"
+              >
+                {isSearching ? <Loader2 className="w-5 h-5 animate-spin" /> : "Go"}
+              </Button>
+            </div>
+            <p className="text-xs text-white/40">Enter UPC barcode or start typing product name</p>
+          </CardContent>
+        </Card>
+      )}
 
       {scaleConnected && (
         <p className="text-center text-blue-400 text-sm flex items-center justify-center gap-2">
