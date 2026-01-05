@@ -45,8 +45,9 @@ const BEVERAGE_TYPES: { value: BeverageType; label: string }[] = [
   { value: "beer", label: "Beer" },
   { value: "cider", label: "Cider" },
   { value: "wine", label: "Wine" },
-  { value: "liquor", label: "Liquor" },
-  { value: "na", label: "Non-Alcoholic" },
+  { value: "spirits", label: "Spirits" },
+  { value: "na", label: "N/A" },
+  { value: "kombucha", label: "Kombucha" },
 ];
 
 export default function ProductsPage() {
@@ -108,8 +109,9 @@ export default function ProductsPage() {
     beer: products.filter(p => p.beverageType === "beer").length,
     cider: products.filter(p => p.beverageType === "cider").length,
     wine: products.filter(p => p.beverageType === "wine").length,
-    liquor: products.filter(p => p.beverageType === "liquor").length,
+    spirits: products.filter(p => p.beverageType === "spirits").length,
     na: products.filter(p => p.beverageType === "na").length,
+    kombucha: products.filter(p => p.beverageType === "kombucha").length,
   };
 
   const filteredProducts = products.filter(product => {
@@ -181,8 +183,9 @@ export default function ProductsPage() {
             { key: "beer", label: "Beer", icon: Beer },
             { key: "cider", label: "Cider", icon: Beer },
             { key: "wine", label: "Wine", icon: Beer },
-            { key: "liquor", label: "Liquor", icon: Beer },
+            { key: "spirits", label: "Spirits", icon: Beer },
             { key: "na", label: "N/A", icon: Beer },
+            { key: "kombucha", label: "Kombucha", icon: Beer },
           ].map(({ key, label }) => (
             <Button
               key={key}

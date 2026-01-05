@@ -47,7 +47,12 @@ function normalizeBeverageType(category: string | undefined): string {
       lowerCategory.includes("tequila") || lowerCategory.includes("brandy") ||
       lowerCategory.includes("liquor") || lowerCategory.includes("spirit") ||
       lowerCategory.includes("scotch") || lowerCategory.includes("cognac")) {
-    return "liquor";
+    return "spirits";
+  }
+  
+  // Kombucha
+  if (lowerCategory.includes("kombucha")) {
+    return "kombucha";
   }
   
   // Cider detection

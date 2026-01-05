@@ -48,7 +48,10 @@ export const distributors = pgTable("distributors", {
 });
 
 // Beverage type enum for filtering
-export const beverageTypeEnum = ["beer", "cider", "wine", "liquor", "na"] as const;
+// spirits = hard alcohol (whiskey, vodka, gin, rum, etc.)
+// na = non-alcoholic (Athletic, Heineken 0.0, etc.)
+// kombucha = fermented tea on tap
+export const beverageTypeEnum = ["beer", "cider", "wine", "spirits", "na", "kombucha"] as const;
 export type BeverageType = typeof beverageTypeEnum[number];
 
 // Products table - inventory items

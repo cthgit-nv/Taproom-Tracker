@@ -37,8 +37,9 @@ const BEVERAGE_TYPES: { value: BeverageType; label: string }[] = [
   { value: "beer", label: "Beer" },
   { value: "cider", label: "Cider" },
   { value: "wine", label: "Wine" },
-  { value: "liquor", label: "Liquor" },
-  { value: "na", label: "Non-Alcoholic" },
+  { value: "spirits", label: "Spirits" },
+  { value: "na", label: "N/A" },
+  { value: "kombucha", label: "Kombucha" },
 ];
 
 export default function KegsPage() {
