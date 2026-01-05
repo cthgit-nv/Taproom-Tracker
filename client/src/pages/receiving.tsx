@@ -180,6 +180,19 @@ export default function ReceivingPage() {
   // Brand and beverage type from Barcode Spider
   const [newProductBrand, setNewProductBrand] = useState("");
   const [newProductBeverageType, setNewProductBeverageType] = useState<string>("beer");
+  const [newProductSize, setNewProductSize] = useState("");
+  
+  // Matching existing products (for UPC update feature)
+  const [matchingProducts, setMatchingProducts] = useState<Array<Product & { hasPlaceholderUpc: boolean }>>([]);
+  const [showMatchDialog, setShowMatchDialog] = useState(false);
+  const [barcodeSpiderData, setBarcodeSpiderData] = useState<{
+    title: string;
+    brand?: string;
+    manufacturer?: string;
+    category?: string;
+    parentCategory?: string;
+    size?: string;
+  } | null>(null);
 
   useEffect(() => {
     if (!authLoading && !isAuthenticated) {
@@ -259,6 +272,32 @@ export default function ReceivingPage() {
     },
   });
 
+  // Update existing product with new UPC and Barcode Spider data
+  const updateProductMutation = useMutation({
+    mutationFn: async (data: { 
+      id: number;
+      upc: string;
+      brand?: string;
+      beverageType?: string;
+      bottleSizeMl?: number | null;
+    }) => {
+      const res = await apiRequest("PATCH", `/api/products/${data.id}`, data);
+      return res.json();
+    },
+    onSuccess: (product: Product) => {
+      queryClient.invalidateQueries({ queryKey: ["/api/products"] });
+      setFoundProduct(product);
+      setShowMatchDialog(false);
+      setMatchingProducts([]);
+      setMode("known_product");
+      
+      toast({
+        title: "Product Updated",
+        description: `${product.name} now linked to scanned barcode`,
+      });
+    },
+  });
+
   // Untappd search handler
   const handleUntappdSearch = async () => {
     if (!untappdSearchQuery.trim()) return;
@@ -326,6 +365,9 @@ export default function ReceivingPage() {
             const barcodeData = await barcodeRes.json();
             console.log("Barcode Spider response:", barcodeData);
             if (barcodeData && barcodeData.title) {
+              // Store barcode spider data for potential matching
+              setBarcodeSpiderData(barcodeData);
+              
               // Pre-fill form with Barcode Spider data
               setNewProductName(barcodeData.title);
               
@@ -334,6 +376,11 @@ export default function ReceivingPage() {
               console.log("Brand from Barcode Spider:", brandValue, "| brand:", barcodeData.brand, "| manufacturer:", barcodeData.manufacturer);
               if (brandValue) {
                 setNewProductBrand(brandValue);
+              }
+              
+              // Store size if available
+              if (barcodeData.size) {
+                setNewProductSize(barcodeData.size);
               }
               
               // Map category to beverageType using both category and parentCategory
@@ -353,10 +400,38 @@ export default function ReceivingPage() {
                 setNewProductDescription(barcodeData.description);
               }
               
-              toast({
-                title: "Product Found",
-                description: `Found: ${barcodeData.title}${brandValue ? ` by ${brandValue}` : ""}`,
-              });
+              // Search for existing products with similar name that have placeholder UPCs
+              // Use first word of product name (usually brand) for search
+              const searchTerm = brandValue || barcodeData.title.split(" ")[0];
+              try {
+                const searchRes = await fetch(`/api/products/search?q=${encodeURIComponent(searchTerm)}`);
+                if (searchRes.ok) {
+                  const matches = await searchRes.json();
+                  const productsWithPlaceholder = matches.filter((p: Product & { hasPlaceholderUpc: boolean }) => p.hasPlaceholderUpc);
+                  
+                  if (productsWithPlaceholder.length > 0) {
+                    // Found existing products that could match - show dialog
+                    setMatchingProducts(productsWithPlaceholder);
+                    setShowMatchDialog(true);
+                    
+                    toast({
+                      title: "Possible Match Found",
+                      description: `Found ${productsWithPlaceholder.length} existing product(s) that might match this barcode`,
+                    });
+                  } else {
+                    toast({
+                      title: "Product Found",
+                      description: `Found: ${barcodeData.title}${brandValue ? ` by ${brandValue}` : ""}${barcodeData.size ? ` (${barcodeData.size})` : ""}`,
+                    });
+                  }
+                }
+              } catch {
+                // Search failed, just continue with new product flow
+                toast({
+                  title: "Product Found",
+                  description: `Found: ${barcodeData.title}${brandValue ? ` by ${brandValue}` : ""}`,
+                });
+              }
             } else {
               toast({
                 title: "New Item",
@@ -476,6 +551,51 @@ export default function ReceivingPage() {
     // Reset Barcode Spider fields
     setNewProductBrand("");
     setNewProductBeverageType("beer");
+    setNewProductSize("");
+    // Reset matching state
+    setMatchingProducts([]);
+    setShowMatchDialog(false);
+    setBarcodeSpiderData(null);
+  };
+
+  // Handle selecting an existing product to update its UPC
+  const handleSelectMatchingProduct = (product: Product) => {
+    if (!scannedUpc || !barcodeSpiderData) return;
+    
+    // Parse size to ml if available
+    let bottleSizeMl: number | null = null;
+    if (newProductSize) {
+      const sizeStr = newProductSize.toLowerCase();
+      const mlMatch = sizeStr.match(/(\d+(?:\.\d+)?)\s*ml/);
+      const lMatch = sizeStr.match(/(\d+(?:\.\d+)?)\s*l(?:iter)?/);
+      const ozMatch = sizeStr.match(/(\d+(?:\.\d+)?)\s*(?:fl\s*)?oz/);
+      
+      if (mlMatch) {
+        bottleSizeMl = parseFloat(mlMatch[1]);
+      } else if (lMatch) {
+        bottleSizeMl = parseFloat(lMatch[1]) * 1000;
+      } else if (ozMatch) {
+        bottleSizeMl = Math.round(parseFloat(ozMatch[1]) * 29.5735);
+      }
+    }
+    
+    const brandValue = barcodeSpiderData.brand || barcodeSpiderData.manufacturer;
+    const beverageType = normalizeBeverageType(barcodeSpiderData.category, barcodeSpiderData.parentCategory);
+    
+    updateProductMutation.mutate({
+      id: product.id,
+      upc: scannedUpc,
+      brand: brandValue || undefined,
+      beverageType: beverageType || undefined,
+      bottleSizeMl,
+    });
+  };
+
+  // Handle skipping the match and creating as new product
+  const handleSkipMatch = () => {
+    setShowMatchDialog(false);
+    setMatchingProducts([]);
+    // Continue with new product form (already populated)
   };
 
   if (authLoading) {
@@ -916,6 +1036,74 @@ export default function ReceivingPage() {
                 </Card>
               ))}
             </div>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Match Existing Product Dialog */}
+      <Dialog open={showMatchDialog} onOpenChange={setShowMatchDialog}>
+        <DialogContent className="bg-[#0a2419] border-[#1A4D2E] max-w-md max-h-[80vh] overflow-hidden">
+          <DialogHeader>
+            <DialogTitle className="text-white flex items-center gap-2">
+              <Package className="w-5 h-5 text-[#D4AF37]" />
+              Link to Existing Product?
+            </DialogTitle>
+          </DialogHeader>
+          
+          <div className="space-y-4">
+            <div className="p-3 rounded-lg bg-[#051a11] border border-[#1A4D2E]">
+              <p className="text-sm text-white/60 mb-1">Scanned barcode found:</p>
+              <p className="text-white font-medium">{barcodeSpiderData?.title}</p>
+              {newProductBrand && (
+                <p className="text-sm text-white/60">Brand: {newProductBrand}</p>
+              )}
+              {newProductSize && (
+                <p className="text-sm text-[#D4AF37]">Size: {newProductSize}</p>
+              )}
+            </div>
+
+            <p className="text-sm text-white/80">
+              We found existing products that might be the same. Select one to update its barcode, or create a new product entry.
+            </p>
+
+            <div className="max-h-[30vh] overflow-y-auto space-y-2">
+              {matchingProducts.map((product) => (
+                <Card 
+                  key={product.id}
+                  className="bg-[#051a11] border-[#1A4D2E] cursor-pointer hover-elevate"
+                  onClick={() => handleSelectMatchingProduct(product)}
+                  data-testid={`match-product-${product.id}`}
+                >
+                  <CardContent className="p-3">
+                    <div className="flex items-center justify-between gap-2">
+                      <div className="flex-1 min-w-0">
+                        <p className="text-white font-medium truncate">{product.name}</p>
+                        {product.brand && (
+                          <p className="text-sm text-white/60">{product.brand}</p>
+                        )}
+                        <p className="text-xs text-white/40">
+                          {product.beverageType || "Unknown type"} 
+                          {product.bottleSizeMl && ` - ${product.bottleSizeMl}ml`}
+                        </p>
+                      </div>
+                      <Badge variant="outline" className="text-[#D4AF37] border-[#D4AF37] shrink-0">
+                        Update
+                      </Badge>
+                    </div>
+                  </CardContent>
+                </Card>
+              ))}
+            </div>
+
+            <Button
+              variant="outline"
+              onClick={handleSkipMatch}
+              className="w-full border-[#1A4D2E] text-white"
+              data-testid="button-create-new-instead"
+            >
+              <Plus className="w-4 h-4 mr-2" />
+              Create as New Product Instead
+            </Button>
           </div>
         </DialogContent>
       </Dialog>

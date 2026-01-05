@@ -300,6 +300,10 @@ export const updateProductSchema = z.object({
   costPerUnit: z.string().nullable().optional(),
   pricePerUnit: z.string().nullable().optional(),
   parLevel: z.number().nullable().optional(),
+  upc: z.string().nullable().optional(),
+  bottleSizeMl: z.number().nullable().optional(),
+  emptyWeightGrams: z.number().nullable().optional(),
+  fullWeightGrams: z.number().nullable().optional(),
 });
 
 export type UpdateProduct = z.infer<typeof updateProductSchema>;

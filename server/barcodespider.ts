@@ -14,6 +14,8 @@ export interface BarcodeSpiderProduct {
   parentCategory?: string;
   imageUrl?: string;
   model?: string;
+  size?: string;
+  weight?: string;
 }
 
 export interface BarcodeSpiderResponse {
@@ -103,6 +105,8 @@ export async function lookupUpc(upc: string): Promise<BarcodeSpiderProduct | nul
       parentCategory: attrs.parent_category || undefined,
       imageUrl: attrs.image || undefined,
       model: attrs.model || undefined,
+      size: attrs.size || undefined,
+      weight: attrs.weight || undefined,
     };
   } catch (error) {
     console.error("Barcode Spider lookup error:", error);

@@ -188,7 +188,7 @@ export async function registerRoutes(
     }
   });
 
-  // Search products by name (for manual inventory entry)
+  // Search products by name (for manual inventory entry and UPC linking)
   app.get("/api/products/search", async (req: Request, res: Response) => {
     try {
       const query = (req.query.q as string || "").toLowerCase().trim();
@@ -202,7 +202,12 @@ export async function registerRoutes(
         p.brand?.toLowerCase().includes(query) ||
         p.style?.toLowerCase().includes(query) ||
         p.upc?.includes(query)
-      ).slice(0, 20); // Limit to 20 results
+      )
+      .map(p => ({
+        ...p,
+        hasPlaceholderUpc: p.upc?.startsWith("prd_") || false,
+      }))
+      .slice(0, 20); // Limit to 20 results
       
       return res.json(matches);
     } catch (error) {
@@ -833,25 +838,6 @@ export async function registerRoutes(
       return res.json(product || null);
     } catch (error) {
       console.error("Get product error:", error);
-      return res.status(500).json({ error: "Internal server error" });
-    }
-  });
-
-  // Update product (for weights, etc.)
-  app.patch("/api/products/:id", async (req: Request, res: Response) => {
-    try {
-      const productId = parseInt(req.params.id);
-      const { emptyWeightGrams, fullWeightGrams, ...otherFields } = req.body;
-      
-      const product = await storage.updateProduct(productId, {
-        emptyWeightGrams,
-        fullWeightGrams,
-        ...otherFields,
-      });
-      
-      return res.json(product);
-    } catch (error) {
-      console.error("Update product error:", error);
       return res.status(500).json({ error: "Internal server error" });
     }
   });
