@@ -235,7 +235,7 @@ export default function InventoryDashboardPage() {
                 </div>
                 <div className="flex-1">
                   <h3 className="text-xl font-bold text-white">Quick Count</h3>
-                  <p className="text-white/60 text-sm">Simple mode for fast inventory</p>
+                  <p className="text-white/60 text-sm">Count backup bottles (kegs auto-tracked)</p>
                 </div>
                 <ChevronRight className="w-6 h-6 text-[#D4AF37]" />
               </CardContent>

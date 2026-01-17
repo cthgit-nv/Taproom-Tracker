@@ -51,8 +51,8 @@ export default function QuickCountPage() {
     enabled: step === "counting",
   });
 
-  // Filter to bottle products only (simpler for quick count)
-  // Kegs require PMB integration which adds complexity
+  // Filter to bottle products only
+  // Kegs are tracked automatically via receiving -> tapping -> PMB/GoTab pours
   const products = allProducts.filter((p) => !p.isSoldByVolume);
 
   const currentProduct = products[currentIndex] || null;
@@ -226,7 +226,7 @@ export default function QuickCountPage() {
             </Button>
             <div>
               <h1 className="text-2xl font-bold text-white">Quick Count</h1>
-              <p className="text-white/60">Select a zone to count</p>
+              <p className="text-white/60">Count backup bottles by zone</p>
             </div>
           </div>
         </header>
@@ -438,7 +438,10 @@ export default function QuickCountPage() {
         <div className="text-center">
           <div className="text-[#D4AF37] animate-pulse text-xl mb-4">Loading products...</div>
           {products.length === 0 && allProducts.length > 0 && (
-            <p className="text-white/40">No bottle products found in this zone.</p>
+            <div className="max-w-xs mx-auto">
+              <p className="text-white/60 mb-2">No bottle products to count.</p>
+              <p className="text-white/40 text-sm">Kegs are tracked automatically via PMB/GoTab.</p>
+            </div>
           )}
         </div>
       </div>
