@@ -301,4 +301,137 @@
     min-height: 56px;
     min-width: 56px;
   }
+
+  /* iOS Safe Area Insets - for notched iPhones and Dynamic Island */
+  .safe-area-pt {
+    padding-top: env(safe-area-inset-top, 0px);
+  }
+
+  .safe-area-pb {
+    padding-bottom: env(safe-area-inset-bottom, 0px);
+  }
+
+  .safe-area-pl {
+    padding-left: env(safe-area-inset-left, 0px);
+  }
+
+  .safe-area-pr {
+    padding-right: env(safe-area-inset-right, 0px);
+  }
+
+  .safe-area-inset {
+    padding-top: env(safe-area-inset-top, 0px);
+    padding-bottom: env(safe-area-inset-bottom, 0px);
+    padding-left: env(safe-area-inset-left, 0px);
+    padding-right: env(safe-area-inset-right, 0px);
+  }
+
+  /* Safe area margins */
+  .safe-area-mt {
+    margin-top: env(safe-area-inset-top, 0px);
+  }
+
+  .safe-area-mb {
+    margin-bottom: env(safe-area-inset-bottom, 0px);
+  }
+
+  /* iOS Keyboard-aware bottom positioning */
+  .keyboard-aware-bottom {
+    position: fixed;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    padding-bottom: env(safe-area-inset-bottom, 0px);
+    transition: transform 0.25s ease-out;
+  }
+
+  /* Compact camera scanner for mobile */
+  .camera-scanner-compact {
+    aspect-ratio: 16 / 9;
+    max-height: 35vh;
+  }
+
+  @media (max-height: 700px) {
+    .camera-scanner-compact {
+      max-height: 30vh;
+    }
+  }
+
+  @media (min-height: 900px) {
+    .camera-scanner-compact {
+      max-height: 40vh;
+    }
+  }
+
+  /* iPad-optimized camera */
+  @media (min-width: 768px) {
+    .camera-scanner-compact {
+      max-height: 45vh;
+      max-width: 600px;
+      margin-left: auto;
+      margin-right: auto;
+    }
+  }
+
+  /* Responsive dialog sizing */
+  .mobile-dialog {
+    max-height: calc(100vh - env(safe-area-inset-top, 0px) - env(safe-area-inset-bottom, 0px) - 2rem);
+    max-width: calc(100vw - 2rem);
+  }
+
+  @media (min-width: 768px) {
+    .mobile-dialog {
+      max-width: 500px;
+    }
+  }
+
+  /* Bottom sheet style for mobile modals */
+  .mobile-sheet {
+    position: fixed;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    max-height: 85vh;
+    border-radius: 1rem 1rem 0 0;
+    padding-bottom: env(safe-area-inset-bottom, 0px);
+  }
+
+  /* Smooth scrolling with momentum on iOS */
+  .ios-scroll {
+    -webkit-overflow-scrolling: touch;
+    overscroll-behavior: contain;
+  }
+
+  /* Prevent iOS rubber-banding on fixed elements */
+  .no-overscroll {
+    overscroll-behavior: none;
+  }
+
+  /* Haptic feedback simulation (visual) */
+  .haptic-press:active {
+    transform: scale(0.97);
+    transition: transform 0.1s ease-out;
+  }
+
+  /* iPad grid optimization */
+  @media (min-width: 768px) {
+    .tablet-grid-3 {
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+    }
+
+    .tablet-grid-4 {
+      grid-template-columns: repeat(4, minmax(0, 1fr));
+    }
+  }
+
+  /* iPhone SE / small screen optimization */
+  @media (max-width: 375px) {
+    .small-screen-compact {
+      padding: 0.75rem;
+    }
+
+    .small-screen-text-sm {
+      font-size: 0.8125rem;
+    }
+  }
 }

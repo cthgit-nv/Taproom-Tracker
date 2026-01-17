@@ -609,7 +609,7 @@ export default function ReceivingPage() {
   return (
     <div className="min-h-screen bg-[#051a11]">
       {/* Header */}
-      <header className="sticky top-0 z-50 bg-[#051a11] border-b border-[#1A4D2E] px-4 py-3">
+      <header className="sticky top-0 z-50 bg-[#051a11] border-b border-[#1A4D2E] px-4 py-2 md:py-3 safe-area-pt">
         <div className="flex items-center gap-3">
           <Button
             variant="ghost"
@@ -641,14 +641,14 @@ export default function ReceivingPage() {
         {/* SCANNING MODE */}
         {mode === "scanning" && (
           <>
-            {/* Camera Preview */}
+            {/* Camera Preview - Compact for mobile */}
             <Card className="bg-[#0a2419] border-2 border-[#1A4D2E] overflow-hidden">
               <CardContent className="p-0">
-                <div className="aspect-[4/3] bg-black flex items-center justify-center">
+                <div className="camera-scanner-compact bg-black flex items-center justify-center">
                   <div className="text-center text-white/60">
-                    <Camera className="w-16 h-16 mx-auto mb-2" />
-                    <p>Camera Active</p>
-                    <p className="text-sm">(Simulated - tap product below)</p>
+                    <Camera className="w-12 h-12 mx-auto mb-1" />
+                    <p className="text-sm">Camera Active</p>
+                    <p className="text-xs">(Simulated - tap product below)</p>
                   </div>
                 </div>
               </CardContent>
@@ -657,7 +657,7 @@ export default function ReceivingPage() {
             {/* Simulation buttons */}
             <div className="space-y-2">
               <p className="text-sm text-white/60">Simulate scanning:</p>
-              <div className="grid grid-cols-2 gap-2">
+              <div className="grid grid-cols-2 md:grid-cols-3 gap-2">
                 {products.slice(0, 4).map((product) => (
                   <Button
                     key={product.id}
@@ -898,16 +898,16 @@ export default function ReceivingPage() {
 
               <div className="space-y-2">
                 <Label className="text-white">Distributor</Label>
-                <div className="grid grid-cols-2 gap-2">
+                <div className="grid grid-cols-2 md:grid-cols-3 gap-2">
                   {distributors.map((dist) => (
                     <Button
                       key={dist.id}
                       variant="outline"
                       onClick={() => setNewProductDistributor(dist.id)}
                       className={`
-                        justify-start
-                        ${newProductDistributor === dist.id 
-                          ? "border-[#D4AF37] text-[#D4AF37]" 
+                        justify-start haptic-press
+                        ${newProductDistributor === dist.id
+                          ? "border-[#D4AF37] text-[#D4AF37]"
                           : "border-[#1A4D2E] text-white/60"
                         }
                       `}
@@ -963,7 +963,7 @@ export default function ReceivingPage() {
 
       {/* Untappd Search Dialog */}
       <Dialog open={showUntappdSearch} onOpenChange={setShowUntappdSearch}>
-        <DialogContent className="bg-[#0a2419] border-[#1A4D2E] max-w-md max-h-[80vh] overflow-hidden">
+        <DialogContent className="bg-[#0a2419] border-[#1A4D2E] max-w-md mobile-dialog overflow-hidden">
           <DialogHeader>
             <DialogTitle className="text-white flex items-center gap-2">
               <Search className="w-5 h-5 text-orange-400" />
@@ -1042,7 +1042,7 @@ export default function ReceivingPage() {
 
       {/* Match Existing Product Dialog */}
       <Dialog open={showMatchDialog} onOpenChange={setShowMatchDialog}>
-        <DialogContent className="bg-[#0a2419] border-[#1A4D2E] max-w-md max-h-[80vh] overflow-hidden">
+        <DialogContent className="bg-[#0a2419] border-[#1A4D2E] max-w-md mobile-dialog overflow-hidden">
           <DialogHeader>
             <DialogTitle className="text-white flex items-center gap-2">
               <Package className="w-5 h-5 text-[#D4AF37]" />

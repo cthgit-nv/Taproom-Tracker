@@ -122,7 +122,7 @@ export default function DashboardPage() {
   return (
     <div className="min-h-screen bg-[#051a11] pb-20">
       {/* Header */}
-      <header className="sticky top-0 z-50 bg-[#051a11] border-b border-[#1A4D2E] px-4 py-3">
+      <header className="sticky top-0 z-50 bg-[#051a11] border-b border-[#1A4D2E] px-4 py-2 md:py-3 safe-area-pt">
         <div className="flex items-center justify-between gap-4">
           <div className="flex items-center gap-3">
             <div className="w-10 h-10 rounded-full bg-[#1A4D2E] flex items-center justify-center border border-[#D4AF37]">
@@ -158,7 +158,7 @@ export default function DashboardPage() {
         {/* Quick Stats */}
         <section>
           <h2 className="text-lg font-semibold text-white mb-4">Quick Overview</h2>
-          <div className="grid grid-cols-2 gap-3">
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
             <Card className="bg-[#0a2419] border-2 border-[#1A4D2E]">
               <CardContent className="p-4">
                 <div className="flex items-start justify-between">
@@ -346,7 +346,7 @@ export default function DashboardPage() {
               <Star className="w-5 h-5 text-[#D4AF37]" />
               Stars vs Dogs Matrix
             </h2>
-            <div className="grid grid-cols-2 gap-3">
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
               {/* Stars - High velocity, High rating */}
               <Card className="bg-[#0a2419] border-2 border-green-500/50">
                 <CardHeader className="pb-2 pt-3 px-3">
@@ -440,8 +440,8 @@ export default function DashboardPage() {
       </main>
 
       {/* Bottom Navigation */}
-      <nav className="fixed bottom-0 left-0 right-0 bg-[#0a2419] border-t border-[#1A4D2E] px-2 py-2 safe-area-pb">
-        <div className="flex items-center justify-around">
+      <nav className="fixed bottom-0 left-0 right-0 bg-[#0a2419] border-t border-[#1A4D2E] px-2 py-1 safe-area-pb">
+        <div className="flex items-center justify-around max-w-lg mx-auto">
           <NavItem icon={Home} label="Dashboard" active />
           <NavItem icon={Package} label="Products" href="/products" />
           <NavItem icon={Beer} label="Kegs" href="/kegs" />
@@ -453,40 +453,40 @@ export default function DashboardPage() {
   );
 }
 
-function NavItem({ 
-  icon: Icon, 
-  label, 
+function NavItem({
+  icon: Icon,
+  label,
   active = false,
   href
-}: { 
-  icon: typeof Home; 
-  label: string; 
+}: {
+  icon: typeof Home;
+  label: string;
   active?: boolean;
   href?: string;
 }) {
   const content = (
     <div
       className={`
-        flex flex-col items-center gap-1 px-3 py-2 rounded-lg min-w-[64px]
-        transition-colors duration-150
-        ${active 
-          ? "text-[#D4AF37]" 
-          : "text-white/50"
+        flex flex-col items-center justify-center gap-0.5 px-2 py-2 rounded-lg min-w-[56px] min-h-[48px]
+        transition-colors duration-150 haptic-press
+        ${active
+          ? "text-[#D4AF37]"
+          : "text-white/50 active:text-white/70"
         }
       `}
       data-testid={`nav-${label.toLowerCase()}`}
     >
       <Icon className="w-5 h-5" />
-      <span className="text-xs font-medium">{label}</span>
+      <span className="text-[10px] font-medium">{label}</span>
       {active && (
-        <div className="w-1 h-1 rounded-full bg-[#D4AF37] mt-0.5" />
+        <div className="w-1 h-1 rounded-full bg-[#D4AF37]" />
       )}
     </div>
   );
-  
+
   if (href) {
     return <Link href={href}>{content}</Link>;
   }
-  
+
   return <button>{content}</button>;
 }

@@ -651,7 +651,7 @@ export default function InventorySessionPage() {
   return (
     <div className="min-h-screen bg-[#051a11]">
       {/* Header */}
-      <header className="sticky top-0 z-50 bg-[#051a11] border-b border-[#1A4D2E] px-4 py-3">
+      <header className="sticky top-0 z-50 bg-[#051a11] border-b border-[#1A4D2E] px-4 py-2 md:py-3 safe-area-pt">
         <div className="flex items-center gap-3">
           <Button
             variant="ghost"
@@ -925,10 +925,10 @@ export default function InventorySessionPage() {
               })}
             </div>
 
-            <div className="fixed bottom-0 left-0 right-0 p-4 bg-[#051a11] border-t border-[#1A4D2E]">
+            <div className="fixed bottom-0 left-0 right-0 p-4 bg-[#051a11] border-t border-[#1A4D2E] safe-area-pb">
               <Button
                 onClick={handleFinishSession}
-                className="w-full h-14 bg-[#D4AF37] text-[#051a11] text-lg font-semibold"
+                className="w-full h-12 md:h-14 bg-[#D4AF37] text-[#051a11] text-base md:text-lg font-semibold haptic-press"
                 data-testid="button-finish-session"
               >
                 Finish Session ({counts.size} items counted)
@@ -952,7 +952,7 @@ export default function InventorySessionPage() {
 
         {/* INPUT MODE */}
         {mode === "input" && currentProduct && (
-          <div className="space-y-4 pb-36">
+          <div className="space-y-3 md:space-y-4 pb-32 md:pb-36">
             {/* Product Card */}
             <Card className="bg-[#0a2419] border-2 border-[#1A4D2E]">
               <CardContent className="p-4 flex items-center gap-4">
@@ -1211,12 +1211,12 @@ export default function InventorySessionPage() {
             )}
 
             {/* Fixed Bottom: Total + Save Button */}
-            <div className="fixed bottom-0 left-0 right-0 bg-[#051a11] border-t border-[#1A4D2E]">
+            <div className="fixed bottom-0 left-0 right-0 bg-[#051a11] border-t border-[#1A4D2E] safe-area-pb">
               {/* Total Units Display */}
-              <div className="px-4 py-3 border-b border-[#1A4D2E]/50">
+              <div className="px-4 py-2 md:py-3 border-b border-[#1A4D2E]/50">
                 <div className="flex items-center justify-between">
                   <div className="flex items-center gap-2">
-                    <span className="text-white/60">Total On Hand</span>
+                    <span className="text-white/60 text-sm md:text-base">Total On Hand</span>
                     {!currentProduct.isSoldByVolume && !isManualEstimate && (
                       <Badge variant="outline" className="border-blue-400 text-blue-400 text-xs">
                         Scale
@@ -1224,11 +1224,11 @@ export default function InventorySessionPage() {
                     )}
                   </div>
                   <div className="flex items-baseline gap-1">
-                    <span className="text-3xl font-bold text-[#D4AF37]" data-testid="text-total-units">
+                    <span className="text-2xl md:text-3xl font-bold text-[#D4AF37]" data-testid="text-total-units">
                       {totalUnits.toFixed(1)}
                     </span>
-                    <span className="text-white/40 text-sm">
-                      {currentProduct.isSoldByVolume 
+                    <span className="text-white/40 text-xs md:text-sm hidden sm:inline">
+                      {currentProduct.isSoldByVolume
                         ? `(${kegSummary?.tapped.reduce((s, k) => {
                             const pmbLevel = k.tapNumber ? pmbLevels.get(k.tapNumber) : null;
                             return s + (pmbLevel ? pmbLevel.fillLevelPercent / 100 : k.remainingPercent);
@@ -1239,13 +1239,13 @@ export default function InventorySessionPage() {
                   </div>
                 </div>
               </div>
-              
+
               {/* Save Button */}
-              <div className="p-4">
+              <div className="p-3 md:p-4">
                 <Button
                   onClick={handleSaveCount}
                   disabled={saveCountMutation.isPending || (!!currentProduct.isSoldByVolume && kegSummary === null)}
-                  className="w-full h-14 bg-[#1A4D2E] text-[#D4AF37] border-2 border-[#D4AF37] text-lg font-semibold"
+                  className="w-full h-12 md:h-14 bg-[#1A4D2E] text-[#D4AF37] border-2 border-[#D4AF37] text-base md:text-lg font-semibold haptic-press"
                   data-testid="button-save-next"
                 >
                   {saveCountMutation.isPending ? "Saving..." : (
@@ -1257,7 +1257,7 @@ export default function InventorySessionPage() {
                     ) : (
                       <>
                         Save & {quickScanMode ? "Scan Next" : "Continue"}
-                        {quickScanMode && <Camera className="w-5 h-5 ml-2" />}
+                        {quickScanMode && <Camera className="w-4 h-4 md:w-5 md:h-5 ml-2" />}
                       </>
                     )
                   )}
@@ -1324,11 +1324,11 @@ export default function InventorySessionPage() {
               );
             })}
 
-            <div className="fixed bottom-0 left-0 right-0 p-4 bg-[#051a11] border-t border-[#1A4D2E]">
+            <div className="fixed bottom-0 left-0 right-0 p-4 bg-[#051a11] border-t border-[#1A4D2E] safe-area-pb">
               <Button
                 onClick={handleSubmitSession}
                 disabled={finishSessionMutation.isPending}
-                className="w-full h-14 bg-[#D4AF37] text-[#051a11] text-lg font-semibold"
+                className="w-full h-12 md:h-14 bg-[#D4AF37] text-[#051a11] text-base md:text-lg font-semibold haptic-press"
                 data-testid="button-submit-session"
               >
                 {finishSessionMutation.isPending ? "Submitting..." : "Finish Session"}
@@ -1412,7 +1412,7 @@ export default function InventorySessionPage() {
               })
             )}
 
-            <div className="fixed bottom-0 left-0 right-0 p-4 bg-[#051a11] border-t border-[#1A4D2E]">
+            <div className="fixed bottom-0 left-0 right-0 p-4 bg-[#051a11] border-t border-[#1A4D2E] safe-area-pb">
               <Button
                 onClick={() => {
                   const zoneId = viewSessionData.session.zoneId;
@@ -1424,7 +1424,7 @@ export default function InventorySessionPage() {
                   setActiveSession(null);
                   setAutoStartZone(zoneId);
                 }}
-                className="w-full h-14 bg-[#1A4D2E] text-[#D4AF37] border-2 border-[#D4AF37] text-lg font-semibold"
+                className="w-full h-12 md:h-14 bg-[#1A4D2E] text-[#D4AF37] border-2 border-[#D4AF37] text-base md:text-lg font-semibold haptic-press"
                 data-testid="button-start-new-count"
               >
                 Start New Count for This Zone
@@ -1436,7 +1436,7 @@ export default function InventorySessionPage() {
 
       {/* Weight Editor Dialog */}
       <Dialog open={showWeightEditor} onOpenChange={setShowWeightEditor}>
-        <DialogContent className="bg-[#0a2419] border-[#1A4D2E] text-white">
+        <DialogContent className="bg-[#0a2419] border-[#1A4D2E] text-white mobile-dialog">
           <DialogHeader>
             <DialogTitle>Edit Bottle Weights</DialogTitle>
           </DialogHeader>
@@ -1579,6 +1579,24 @@ function ScanModeContent({
     }, 3000);
   }, [displayProducts, handleSelectProduct, toast]);
   
+  // Calculate responsive qrbox dimensions based on screen size
+  const getResponsiveQrBox = () => {
+    const screenWidth = window.innerWidth;
+    const screenHeight = window.innerHeight;
+
+    // Use smaller dimensions on mobile for compact camera view
+    if (screenWidth < 400) {
+      // iPhone SE and small phones
+      return { width: Math.min(200, screenWidth * 0.6), height: 100 };
+    } else if (screenWidth < 768) {
+      // Standard phones
+      return { width: Math.min(220, screenWidth * 0.55), height: 120 };
+    } else {
+      // Tablets (iPad)
+      return { width: 280, height: 160 };
+    }
+  };
+
   useEffect(() => {
     const stopScanner = async () => {
       if (scannerRef.current && scannerRunningRef.current) {
@@ -1591,12 +1609,12 @@ function ScanModeContent({
       scannerRef.current = null;
       setScannerReady(false);
     };
-    
+
     if (!useCameraScanner) {
       stopScanner();
       return;
     }
-    
+
     const startScanner = async () => {
       try {
         const container = document.getElementById(scannerContainerId);
@@ -1604,25 +1622,28 @@ function ScanModeContent({
           setTimeout(startScanner, 100);
           return;
         }
-        
+
         await stopScanner();
-        
+
         const scanner = new Html5Qrcode(scannerContainerId);
         scannerRef.current = scanner;
-        
+
+        // Use responsive qrbox and wider aspect ratio for compact view
+        const qrbox = getResponsiveQrBox();
+
         await scanner.start(
           { facingMode: "environment" },
           {
             fps: 10,
-            qrbox: { width: 250, height: 150 },
-            aspectRatio: 1.333,
+            qrbox,
+            aspectRatio: 1.777, // 16:9 for more compact view
           },
           (decodedText) => {
             handleScannedCode(decodedText);
           },
           () => {}
         );
-        
+
         scannerRunningRef.current = true;
         setScannerReady(true);
         setCameraError(null);
@@ -1634,9 +1655,9 @@ function ScanModeContent({
         setScannerReady(false);
       }
     };
-    
+
     startScanner();
-    
+
     return () => {
       stopScanner();
       if (scanTimeoutRef.current) {
@@ -1816,11 +1837,12 @@ function ScanModeContent({
         <Card className="bg-[#0a2419] border-2 border-[#D4AF37] overflow-hidden">
           <CardContent className="p-0">
             {cameraError ? (
-              <div className="aspect-[4/3] bg-black flex flex-col items-center justify-center p-4">
-                <AlertTriangle className="w-12 h-12 text-orange-400 mb-3" />
+              <div className="camera-scanner-compact bg-black flex flex-col items-center justify-center p-4">
+                <AlertTriangle className="w-10 h-10 text-orange-400 mb-2" />
                 <p className="text-orange-300 text-center text-sm mb-3">{cameraError}</p>
                 <Button
                   variant="outline"
+                  size="sm"
                   onClick={() => setUseCameraScanner(false)}
                   className="border-[#D4AF37] text-[#D4AF37]"
                 >
@@ -1829,18 +1851,18 @@ function ScanModeContent({
               </div>
             ) : (
               <div className="relative">
-                <div id={scannerContainerId} className="w-full aspect-[4/3]" />
+                <div id={scannerContainerId} className="w-full camera-scanner-compact" />
                 {!scannerReady && (
                   <div className="absolute inset-0 bg-black flex items-center justify-center">
                     <div className="text-center">
-                      <Loader2 className="w-8 h-8 text-[#D4AF37] animate-spin mx-auto mb-2" />
-                      <p className="text-white/60 text-sm">Starting camera...</p>
+                      <Loader2 className="w-6 h-6 text-[#D4AF37] animate-spin mx-auto mb-1" />
+                      <p className="text-white/60 text-xs">Starting camera...</p>
                     </div>
                   </div>
                 )}
                 {scannerReady && (
-                  <div className="absolute bottom-2 left-0 right-0 text-center">
-                    <Badge className="bg-green-500/80 text-white">
+                  <div className="absolute bottom-1 left-0 right-0 text-center">
+                    <Badge className="bg-green-500/80 text-white text-xs px-2 py-0.5">
                       Point at barcode
                     </Badge>
                   </div>
@@ -1955,11 +1977,11 @@ function ScanModeContent({
       )}
 
       <Dialog open={showAddProduct} onOpenChange={setShowAddProduct}>
-        <DialogContent className="bg-[#0a2419] border-[#1A4D2E] text-white max-w-md">
+        <DialogContent className="bg-[#0a2419] border-[#1A4D2E] text-white max-w-md mobile-dialog overflow-y-auto ios-scroll">
           <DialogHeader>
             <DialogTitle className="text-[#D4AF37]">Add New Product</DialogTitle>
           </DialogHeader>
-          <div className="space-y-4 py-2">
+          <div className="space-y-3 py-2">
             {upcLookupResult && (
               <Card className="bg-[#051a11] border-[#1A4D2E]">
                 <CardContent className="p-3">
@@ -1971,44 +1993,45 @@ function ScanModeContent({
                 </CardContent>
               </Card>
             )}
-            <div className="space-y-2">
-              <Label className="text-white">Product Name *</Label>
+            <div className="space-y-1.5">
+              <Label className="text-white text-sm">Product Name *</Label>
               <Input
                 value={newProductName}
                 onChange={(e) => setNewProductName(e.target.value)}
                 placeholder="e.g., Sierra Nevada Pale Ale"
-                className="bg-[#051a11] border-[#1A4D2E] text-white"
+                className="bg-[#051a11] border-[#1A4D2E] text-white h-10"
                 data-testid="input-new-product-name"
               />
             </div>
-            <div className="space-y-2">
-              <Label className="text-white">UPC Code</Label>
+            <div className="space-y-1.5">
+              <Label className="text-white text-sm">UPC Code</Label>
               <Input
                 value={newProductUpc}
                 onChange={(e) => setNewProductUpc(e.target.value)}
                 placeholder="12-digit barcode"
-                className="bg-[#051a11] border-[#1A4D2E] text-white"
+                className="bg-[#051a11] border-[#1A4D2E] text-white h-10"
                 data-testid="input-new-product-upc"
               />
             </div>
-            <div className="grid grid-cols-2 gap-3">
-              <div className="space-y-2">
-                <Label className="text-white">Size (ml)</Label>
+            <div className="grid grid-cols-2 gap-2">
+              <div className="space-y-1.5">
+                <Label className="text-white text-sm">Size (ml)</Label>
                 <Input
                   type="number"
+                  inputMode="numeric"
                   value={newProductSizeMl}
                   onChange={(e) => setNewProductSizeMl(e.target.value)}
                   placeholder="750"
-                  className="bg-[#051a11] border-[#1A4D2E] text-white"
+                  className="bg-[#051a11] border-[#1A4D2E] text-white h-10"
                   data-testid="input-new-product-size"
                 />
               </div>
-              <div className="space-y-2">
-                <Label className="text-white">Type</Label>
+              <div className="space-y-1.5">
+                <Label className="text-white text-sm">Type</Label>
                 <select
                   value={newProductBeverageType}
                   onChange={(e) => setNewProductBeverageType(e.target.value)}
-                  className="w-full h-9 rounded-md bg-[#051a11] border border-[#1A4D2E] text-white px-3"
+                  className="w-full h-10 rounded-md bg-[#051a11] border border-[#1A4D2E] text-white px-3"
                   data-testid="select-new-product-type"
                 >
                   <option value="beer">Beer</option>
@@ -2051,10 +2074,10 @@ function ScanModeContent({
         </DialogContent>
       </Dialog>
 
-      <div className="fixed bottom-0 left-0 right-0 p-4 bg-[#051a11] border-t border-[#1A4D2E]">
+      <div className="fixed bottom-0 left-0 right-0 p-4 bg-[#051a11] border-t border-[#1A4D2E] safe-area-pb">
         <Button
           onClick={handleFinishSession}
-          className="w-full h-14 bg-[#D4AF37] text-[#051a11] text-lg font-semibold"
+          className="w-full h-12 md:h-14 bg-[#D4AF37] text-[#051a11] text-base md:text-lg font-semibold haptic-press"
           data-testid="button-finish-session-scan"
         >
           Finish Session ({countsSize} items counted)
