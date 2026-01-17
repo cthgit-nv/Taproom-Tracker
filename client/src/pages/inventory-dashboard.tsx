@@ -6,14 +6,15 @@ import { queryClient, apiRequest } from "@/lib/queryClient";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { 
+import {
   ArrowLeft,
   Play,
   Clock,
   CheckCircle,
   AlertCircle,
   Trash2,
-  ChevronRight
+  ChevronRight,
+  Zap
 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import type { Zone, InventorySession } from "@shared/schema";
@@ -222,6 +223,24 @@ export default function InventoryDashboardPage() {
               </div>
             </CardContent>
           </Card>
+        )}
+
+        {/* Quick Count - Simplified View for Bartenders */}
+        {!activeSession && (
+          <Link href="/quick-count">
+            <Card className="bg-gradient-to-r from-[#D4AF37]/20 to-[#1A4D2E] border-2 border-[#D4AF37] cursor-pointer hover:from-[#D4AF37]/30 transition-all">
+              <CardContent className="p-5 flex items-center gap-4">
+                <div className="flex items-center justify-center w-14 h-14 rounded-full bg-[#D4AF37] text-[#051a11]">
+                  <Zap className="w-7 h-7" />
+                </div>
+                <div className="flex-1">
+                  <h3 className="text-xl font-bold text-white">Quick Count</h3>
+                  <p className="text-white/60 text-sm">Simple mode for fast inventory</p>
+                </div>
+                <ChevronRight className="w-6 h-6 text-[#D4AF37]" />
+              </CardContent>
+            </Card>
+          </Link>
         )}
 
         {/* Zone List */}
