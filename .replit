@@ -11,6 +11,11 @@ externalPort = 80
 
 [env]
 PORT = "5000"
+DEBUG = "*"
+NODE_ENV = "development"
+GIT_TRACE = "1"
+GIT_CURL_VERBOSE = "1"
+VITE_DEBUG = "true"
 
 [deployment]
 deploymentTarget = "autoscale"
