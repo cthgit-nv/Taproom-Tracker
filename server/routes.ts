@@ -8,6 +8,38 @@ import { fetchDailySales, fetchProductCatalog, isGoTabConfigured, type GoTabSale
 import { isUntappdConfigured, previewTapList, fetchFullTapList, type UntappdMenuItem } from "./untappd";
 import { isBarcodeSpiderConfigured, getApiStatus as getBarcodeSpiderStatus } from "./barcodespider";
 import { lookupUpc as lookupUpcOrchestrator, getLookupStatus } from "./upcLookup";
+import { rateLimit, hashPin, verifyPin, sanitizeInput } from "./security";
+
+// Authorization middleware helpers
+import type { NextFunction } from "express";
+
+function requireAuth(req: Request, res: Response, next: NextFunction) {
+  if (!req.session.userId) {
+    return res.status(401).json({ error: "Not authenticated" });
+  }
+  next();
+}
+
+async function requireRole(req: Request, res: Response, next: NextFunction, allowedRoles: string[]) {
+  if (!req.session.userId) {
+    return res.status(401).json({ error: "Not authenticated" });
+  }
+  
+  const user = await storage.getUser(req.session.userId);
+  if (!user || !allowedRoles.includes(user.role)) {
+    return res.status(403).json({ error: "Insufficient permissions" });
+  }
+  
+  next();
+}
+
+function requireAdmin(req: Request, res: Response, next: NextFunction) {
+  return requireRole(req, res, next, ["admin", "owner"]);
+}
+
+function requireOwner(req: Request, res: Response, next: NextFunction) {
+  return requireRole(req, res, next, ["owner"]);
+}
 
 // Extend express-session types
 declare module "express-session" {
@@ -20,17 +52,28 @@ export async function registerRoutes(
   httpServer: Server,
   app: Express
 ): Promise<Server> {
+  // Security: Require SESSION_SECRET in production
+  const sessionSecret = process.env.SESSION_SECRET;
+  if (process.env.NODE_ENV === "production" && !sessionSecret) {
+    throw new Error("SESSION_SECRET environment variable is required in production");
+  }
+  if (!sessionSecret) {
+    console.warn("WARNING: Using default session secret. Set SESSION_SECRET environment variable in production!");
+  }
+
   // Session middleware
   app.use(
     session({
-      secret: process.env.SESSION_SECRET || "wellstocked-dev-secret-change-in-prod",
+      secret: sessionSecret || "wellstocked-dev-secret-change-in-prod",
       resave: false,
       saveUninitialized: false,
       cookie: {
         secure: process.env.NODE_ENV === "production",
         httpOnly: true,
+        sameSite: "strict",
         maxAge: 24 * 60 * 60 * 1000, // 24 hours
       },
+      name: "taproom.session", // Don't use default 'connect.sid'
     })
   );
 
@@ -41,31 +84,45 @@ export async function registerRoutes(
   // Authentication Routes
   // ========================
   
-  // Login with PIN
-  app.post("/api/auth/login", async (req: Request, res: Response) => {
-    try {
-      const { pin } = pinLoginSchema.parse(req.body);
-      
-      const user = await storage.getUserByPin(pin);
-      
-      if (!user) {
-        return res.status(401).json({ error: "Invalid PIN" });
+  // Login with PIN - rate limited to prevent brute force
+  app.post(
+    "/api/auth/login",
+    rateLimit(5, 15 * 60 * 1000), // 5 attempts per 15 minutes
+    async (req: Request, res: Response) => {
+      try {
+        const { pin } = pinLoginSchema.parse(req.body);
+        
+        // Get all users and check PIN hash
+        const users = await storage.getAllUsers();
+        const user = users.find(u => {
+          // Support both hashed and plain text PINs during migration
+          try {
+            return verifyPin(pin, u.pinCode) || u.pinCode === pin;
+          } catch {
+            return u.pinCode === pin; // Fallback for plain text
+          }
+        });
+        
+        if (!user) {
+          // Use generic error message to prevent user enumeration
+          return res.status(401).json({ error: "Invalid credentials" });
+        }
+        
+        // Set session
+        req.session.userId = user.id;
+        
+        // Return user without exposing PIN
+        const { pinCode, ...safeUser } = user;
+        return res.json({ user: safeUser });
+      } catch (error) {
+        if (error instanceof z.ZodError) {
+          return res.status(400).json({ error: "Invalid PIN format" });
+        }
+        console.error("Login error:", error);
+        return res.status(500).json({ error: "Internal server error" });
       }
-      
-      // Set session
-      req.session.userId = user.id;
-      
-      // Return user without exposing PIN
-      const { pinCode, ...safeUser } = user;
-      return res.json({ user: safeUser });
-    } catch (error) {
-      if (error instanceof z.ZodError) {
-        return res.status(400).json({ error: "Invalid PIN format" });
-      }
-      console.error("Login error:", error);
-      return res.status(500).json({ error: "Internal server error" });
     }
-  });
+  );
 
   // Check session
   app.get("/api/auth/session", async (req: Request, res: Response) => {
@@ -96,7 +153,7 @@ export async function registerRoutes(
         console.error("Logout error:", err);
         return res.status(500).json({ error: "Logout failed" });
       }
-      res.clearCookie("connect.sid");
+      res.clearCookie("taproom.session");
       return res.json({ success: true });
     });
   });
@@ -105,7 +162,8 @@ export async function registerRoutes(
   // User Routes
   // ========================
   
-  app.get("/api/users", async (_req: Request, res: Response) => {
+  // Get all users - requires authentication
+  app.get("/api/users", requireAuth, async (_req: Request, res: Response) => {
     try {
       const users = await storage.getAllUsers();
       // Remove PIN from response
@@ -121,7 +179,8 @@ export async function registerRoutes(
   // Settings Routes
   // ========================
   
-  app.get("/api/settings", async (_req: Request, res: Response) => {
+  // Get settings - requires authentication
+  app.get("/api/settings", requireAuth, async (_req: Request, res: Response) => {
     try {
       const settings = await storage.getSettings();
       return res.json(settings || null);
@@ -135,7 +194,7 @@ export async function registerRoutes(
   // Pricing Defaults Routes
   // ========================
 
-  app.get("/api/pricing-defaults", async (_req: Request, res: Response) => {
+  app.get("/api/pricing-defaults", requireAuth, async (_req: Request, res: Response) => {
     try {
       const defaults = await storage.getAllPricingDefaults();
       return res.json(defaults);
@@ -145,14 +204,7 @@ export async function registerRoutes(
     }
   });
 
-  app.post("/api/pricing-defaults", async (req: Request, res: Response) => {
-    if (!req.session.userId) {
-      return res.status(401).json({ error: "Unauthorized" });
-    }
-    const user = await storage.getUser(req.session.userId);
-    if (!user || (user.role !== "owner" && user.role !== "admin")) {
-      return res.status(403).json({ error: "Admin access required" });
-    }
+  app.post("/api/pricing-defaults", requireAdmin, async (req: Request, res: Response) => {
     try {
       const parsed = insertPricingDefaultSchema.safeParse(req.body);
       if (!parsed.success) {
@@ -170,7 +222,7 @@ export async function registerRoutes(
   // Distributors Routes
   // ========================
   
-  app.get("/api/distributors", async (_req: Request, res: Response) => {
+  app.get("/api/distributors", requireAuth, async (_req: Request, res: Response) => {
     try {
       const distributors = await storage.getAllDistributors();
       return res.json(distributors);
@@ -181,25 +233,30 @@ export async function registerRoutes(
   });
 
   // Create distributor (admin/owner only)
-  app.post("/api/distributors", async (req: Request, res: Response) => {
+  app.post("/api/distributors", requireAdmin, async (req: Request, res: Response) => {
     try {
-      if (!req.session.userId) {
-        return res.status(401).json({ error: "Not authenticated" });
-      }
-      
-      const currentUser = await storage.getUser(req.session.userId);
-      if (!currentUser || !["admin", "owner"].includes(currentUser.role)) {
-        return res.status(403).json({ error: "Admin access required" });
-      }
       
       const { name, email, orderMinimum } = req.body;
       if (!name || name.trim() === "") {
         return res.status(400).json({ error: "Distributor name is required" });
       }
       
+      // Sanitize inputs
+      const sanitizedName = sanitizeInput(name.trim());
+      const sanitizedEmail = email ? sanitizeInput(email) : null;
+      
+      if (!sanitizedName || sanitizedName.length < 1) {
+        return res.status(400).json({ error: "Invalid distributor name" });
+      }
+      
+      // Basic email validation
+      if (sanitizedEmail && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(sanitizedEmail)) {
+        return res.status(400).json({ error: "Invalid email format" });
+      }
+      
       const distributor = await storage.createDistributor({
-        name: name.trim(),
-        email: email || null,
+        name: sanitizedName,
+        email: sanitizedEmail,
         orderMinimum: orderMinimum || null,
       });
       
@@ -214,7 +271,7 @@ export async function registerRoutes(
   // Products Routes
   // ========================
   
-  app.get("/api/products", async (_req: Request, res: Response) => {
+  app.get("/api/products", requireAuth, async (_req: Request, res: Response) => {
     try {
       const products = await storage.getAllProducts();
       return res.json(products);
@@ -225,9 +282,11 @@ export async function registerRoutes(
   });
 
   // Search products by name (for manual inventory entry and UPC linking)
-  app.get("/api/products/search", async (req: Request, res: Response) => {
+  app.get("/api/products/search", requireAuth, async (req: Request, res: Response) => {
     try {
-      const query = (req.query.q as string || "").toLowerCase().trim();
+      const rawQuery = req.query.q as string || "";
+      // Sanitize search query
+      const query = sanitizeInput(rawQuery).toLowerCase().trim();
       if (!query || query.length < 2) {
         return res.json([]);
       }
@@ -253,17 +312,25 @@ export async function registerRoutes(
   });
 
   // Create new product with duplicate detection
-  app.post("/api/products", async (req: Request, res: Response) => {
+  app.post("/api/products", requireAuth, async (req: Request, res: Response) => {
     try {
-      if (!req.session.userId) {
-        return res.status(401).json({ error: "Not authenticated" });
-      }
       
       const { name, upc, distributorId, brand, beverageType, style, notes, abv, ibu, isLocal, skipDuplicateCheck } = req.body;
       
       if (!name || name.trim() === "") {
         return res.status(400).json({ error: "Product name is required" });
       }
+      
+      // Sanitize all text inputs
+      const sanitizedName = sanitizeInput(name.trim());
+      if (!sanitizedName || sanitizedName.length < 1) {
+        return res.status(400).json({ error: "Invalid product name" });
+      }
+      
+      const sanitizedUpc = upc ? sanitizeInput(upc) : null;
+      const sanitizedBrand = brand ? sanitizeInput(brand) : null;
+      const sanitizedStyle = style ? sanitizeInput(style) : null;
+      const sanitizedNotes = notes ? sanitizeInput(notes) : null;
       
       const allProducts = await storage.getAllProducts();
       
@@ -311,13 +378,13 @@ export async function registerRoutes(
       
       // Create the product
       const product = await storage.createProduct({
-        name: name.trim(),
-        upc: upc || null,
+        name: sanitizedName,
+        upc: sanitizedUpc,
         distributorId: distributorId || null,
-        brand: brand || null,
+        brand: sanitizedBrand,
         beverageType: beverageType || "beer",
-        style: style || null,
-        notes: notes || null,
+        style: sanitizedStyle,
+        notes: sanitizedNotes,
         abv: abv || null,
         ibu: ibu || null,
         isLocal: isLocal || false,
@@ -347,7 +414,7 @@ export async function registerRoutes(
     }
   });
 
-  app.patch("/api/products/:id", async (req: Request, res: Response) => {
+  app.patch("/api/products/:id", requireAuth, async (req: Request, res: Response) => {
     try {
       const id = parseInt(req.params.id, 10);
       if (isNaN(id)) {
@@ -375,7 +442,7 @@ export async function registerRoutes(
   // Kegs Routes
   // ========================
   
-  app.get("/api/kegs", async (_req: Request, res: Response) => {
+  app.get("/api/kegs", requireAuth, async (_req: Request, res: Response) => {
     try {
       // Filter kegs by simulation mode from settings
       const settings = await storage.getSettings();
@@ -388,11 +455,8 @@ export async function registerRoutes(
     }
   });
 
-  app.patch("/api/kegs/:id", async (req: Request, res: Response) => {
+  app.patch("/api/kegs/:id", requireAuth, async (req: Request, res: Response) => {
     try {
-      if (!req.session.userId) {
-        return res.status(401).json({ error: "Not authenticated" });
-      }
       
       const id = parseInt(req.params.id, 10);
       if (isNaN(id)) {
@@ -420,7 +484,7 @@ export async function registerRoutes(
   });
 
   // Get keg inventory summary for a product (tapped and on_deck kegs)
-  app.get("/api/kegs/product/:productId/summary", async (req: Request, res: Response) => {
+  app.get("/api/kegs/product/:productId/summary", requireAuth, async (req: Request, res: Response) => {
     try {
       const productId = parseInt(req.params.productId);
       // Filter kegs by simulation mode from settings
@@ -467,7 +531,7 @@ export async function registerRoutes(
   // Taps Routes
   // ========================
   
-  app.get("/api/taps", async (_req: Request, res: Response) => {
+  app.get("/api/taps", requireAuth, async (_req: Request, res: Response) => {
     try {
       const taps = await storage.getAllTaps();
       return res.json(taps);
@@ -481,7 +545,7 @@ export async function registerRoutes(
   // Zones Routes
   // ========================
   
-  app.get("/api/zones", async (_req: Request, res: Response) => {
+  app.get("/api/zones", requireAuth, async (_req: Request, res: Response) => {
     try {
       const zones = await storage.getAllZones();
       return res.json(zones);
@@ -897,16 +961,7 @@ export async function registerRoutes(
     }
   });
 
-  // Get single product
-  app.get("/api/products/:id", async (req: Request, res: Response) => {
-    try {
-      const product = await storage.getProduct(parseInt(req.params.id));
-      return res.json(product || null);
-    } catch (error) {
-      console.error("Get product error:", error);
-      return res.status(500).json({ error: "Internal server error" });
-    }
-  });
+  // Duplicate route removed - already defined above
 
   // ========================
   // Reorder Flags Routes
@@ -1409,13 +1464,33 @@ export async function registerRoutes(
         return res.status(400).json({ error: "Invalid role" });
       }
       
-      // Check if PIN already exists
-      const existingUser = await storage.getUserByPin(pinCode);
+      // Validate PIN format
+      if (!/^\d{4}$/.test(pinCode)) {
+        return res.status(400).json({ error: "PIN must be exactly 4 digits" });
+      }
+      
+      // Sanitize name
+      const sanitizedName = sanitizeInput(name);
+      if (!sanitizedName || sanitizedName.length < 1) {
+        return res.status(400).json({ error: "Invalid name" });
+      }
+      
+      // Check if PIN already exists (check all users for hash match)
+      const allUsers = await storage.getAllUsers();
+      const existingUser = allUsers.find(u => {
+        try {
+          return verifyPin(pinCode, u.pinCode) || u.pinCode === pinCode;
+        } catch {
+          return u.pinCode === pinCode;
+        }
+      });
       if (existingUser) {
         return res.status(400).json({ error: "PIN already in use" });
       }
       
-      const user = await storage.createUser({ name, pinCode, role });
+      // Hash PIN before storing
+      const hashedPin = hashPin(pinCode);
+      const user = await storage.createUser({ name: sanitizedName, pinCode: hashedPin, role });
       const { pinCode: _, ...safeUser } = user;
       return res.json(safeUser);
     } catch (error) {
@@ -1437,17 +1512,53 @@ export async function registerRoutes(
       }
       
       const userId = parseInt(req.params.id);
-      const { name, pinCode, role } = req.body;
-      
-      // If changing PIN, check it's not in use
-      if (pinCode) {
-        const existingUser = await storage.getUserByPin(pinCode);
-        if (existingUser && existingUser.id !== userId) {
-          return res.status(400).json({ error: "PIN already in use" });
-        }
+      if (isNaN(userId)) {
+        return res.status(400).json({ error: "Invalid user ID" });
       }
       
-      const user = await storage.updateUser(userId, { name, pinCode, role });
+      const { name, pinCode, role } = req.body;
+      
+      const updateData: any = {};
+      
+      if (name !== undefined) {
+        const sanitizedName = sanitizeInput(name);
+        if (!sanitizedName || sanitizedName.length < 1) {
+          return res.status(400).json({ error: "Invalid name" });
+        }
+        updateData.name = sanitizedName;
+      }
+      
+      if (pinCode !== undefined) {
+        // Validate PIN format
+        if (!/^\d{4}$/.test(pinCode)) {
+          return res.status(400).json({ error: "PIN must be exactly 4 digits" });
+        }
+        
+        // Check if PIN already exists (check all users for hash match)
+        const allUsers = await storage.getAllUsers();
+        const existingUser = allUsers.find(u => {
+          try {
+            return (verifyPin(pinCode, u.pinCode) || u.pinCode === pinCode) && u.id !== userId;
+          } catch {
+            return u.pinCode === pinCode && u.id !== userId;
+          }
+        });
+        if (existingUser) {
+          return res.status(400).json({ error: "PIN already in use" });
+        }
+        
+        // Hash PIN before storing
+        updateData.pinCode = hashPin(pinCode);
+      }
+      
+      if (role !== undefined) {
+        if (!["owner", "admin", "staff"].includes(role)) {
+          return res.status(400).json({ error: "Invalid role" });
+        }
+        updateData.role = role;
+      }
+      
+      const user = await storage.updateUser(userId, updateData);
       if (!user) {
         return res.status(404).json({ error: "User not found" });
       }
@@ -1705,28 +1816,38 @@ async function seedInitialData() {
     const existingUsers = await storage.getAllUsers();
     
     if (existingUsers.length === 0) {
-      // Create default owner user with PIN 1234 (Super Admin)
+      // Create default owner user with random PIN (must be changed on first login)
+      // Generate a random 4-digit PIN
+      const ownerPin = Math.floor(1000 + Math.random() * 9000).toString();
+      const adminPin = Math.floor(1000 + Math.random() * 9000).toString();
+      const staffPin = Math.floor(1000 + Math.random() * 9000).toString();
+      
       await storage.createUser({
         name: "Owner",
-        pinCode: "1234",
+        pinCode: hashPin(ownerPin),
         role: "owner",
       });
       
-      // Create default admin user with PIN 0000 (GM)
       await storage.createUser({
         name: "Admin",
-        pinCode: "0000",
+        pinCode: hashPin(adminPin),
         role: "admin",
       });
       
-      // Create default staff user with PIN 5678
       await storage.createUser({
         name: "Staff",
-        pinCode: "5678",
+        pinCode: hashPin(staffPin),
         role: "staff",
       });
       
-      console.log("Seeded default users: Owner (PIN: 1234), Admin (PIN: 0000), Staff (PIN: 5678)");
+      // Log PINs only in development, warn in production
+      if (process.env.NODE_ENV === "development") {
+        console.log(`Seeded default users - Owner (PIN: ${ownerPin}), Admin (PIN: ${adminPin}), Staff (PIN: ${staffPin})`);
+        console.log("⚠️  WARNING: Change these PINs immediately in production!");
+      } else {
+        console.log("Seeded default users. PINs have been generated and hashed.");
+        console.log("⚠️  WARNING: Default users created. Change PINs immediately!");
+      }
     }
 
     // Check if settings exist

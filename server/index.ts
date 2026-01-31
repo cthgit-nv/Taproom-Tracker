@@ -22,6 +22,28 @@ app.use(
 
 app.use(express.urlencoded({ extended: false }));
 
+// Security headers middleware
+app.use((req, res, next) => {
+  // Prevent clickjacking
+  res.setHeader("X-Frame-Options", "DENY");
+  // Prevent MIME type sniffing
+  res.setHeader("X-Content-Type-Options", "nosniff");
+  // Enable XSS protection
+  res.setHeader("X-XSS-Protection", "1; mode=block");
+  // Referrer policy
+  res.setHeader("Referrer-Policy", "strict-origin-when-cross-origin");
+  // Content Security Policy
+  if (process.env.NODE_ENV === "production") {
+    res.setHeader(
+      "Content-Security-Policy",
+      "default-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval'; style-src 'self' 'unsafe-inline'; img-src 'self' data: https:; font-src 'self' data:; connect-src 'self';"
+    );
+  }
+  // Permissions policy
+  res.setHeader("Permissions-Policy", "geolocation=(), microphone=(), camera=()");
+  next();
+});
+
 export function log(message: string, source = "express") {
   const formattedTime = new Date().toLocaleTimeString("en-US", {
     hour: "numeric",
@@ -64,10 +86,23 @@ app.use((req, res, next) => {
 
   app.use((err: any, _req: Request, res: Response, _next: NextFunction) => {
     const status = err.status || err.statusCode || 500;
-    const message = err.message || "Internal Server Error";
+    
+    // Don't leak error details in production
+    const message = process.env.NODE_ENV === "production" && status === 500
+      ? "Internal Server Error"
+      : (err.message || "Internal Server Error");
+
+    // Log full error details server-side
+    if (status >= 500) {
+      console.error("Server error:", err);
+    }
 
     res.status(status).json({ message });
-    throw err;
+    
+    // Only throw in development to see stack traces
+    if (process.env.NODE_ENV !== "production") {
+      throw err;
+    }
   });
 
   // importantly only setup vite in development and after

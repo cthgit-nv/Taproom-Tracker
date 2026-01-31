@@ -18,6 +18,7 @@ import {
 } from "@shared/schema";
 import { db } from "./db";
 import { eq, and, isNull, isNotNull, desc } from "drizzle-orm";
+import { verifyPin } from "./security";
 
 export interface IStorage {
   // Users
@@ -115,8 +116,17 @@ export class DatabaseStorage implements IStorage {
   }
 
   async getUserByPin(pinCode: string): Promise<User | undefined> {
-    const [user] = await db.select().from(users).where(eq(users.pinCode, pinCode));
-    return user || undefined;
+    // Note: This method is deprecated - PINs are now hashed
+    // Use getAllUsers() and verifyPin() instead
+    // Keeping for backward compatibility during migration
+    const allUsers = await db.select().from(users);
+    return allUsers.find(u => {
+      try {
+        return verifyPin(pinCode, u.pinCode) || u.pinCode === pinCode;
+      } catch {
+        return u.pinCode === pinCode; // Fallback for plain text during migration
+      }
+    }) || undefined;
   }
 
   async createUser(insertUser: InsertUser): Promise<User> {
