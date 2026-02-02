@@ -1,0 +1,43 @@
+# Railway ignore file - files to exclude from deployment
+
+# Development files
+.replit
+replit.md
+*.log
+.DS_Store
+
+# Build artifacts (will be regenerated)
+dist/
+
+# Dependencies (will be installed)
+node_modules/
+
+# Git
+.git/
+.gitignore
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Environment files (use Railway variables instead)
+.env
+.env.local
+.env.*.local
+
+# Documentation
+*.md
+!README.md
+
+# Test files
+**/*.test.ts
+**/*.test.tsx
+**/*.spec.ts
+**/*.spec.tsx
+
+# Temporary files
+tmp/
+temp/
+*.tmp
