@@ -15,6 +15,9 @@
     "db:push": "drizzle-kit push",
     "test:build": "npm run build && node scripts/pre-deploy-check.js",
     "test:start": "NODE_ENV=production node dist/index.cjs",
+    "test:railway": "./scripts/test-railway-build.sh",
+    "test:autonomous": "./scripts/test-build-autonomous.sh",
+    "debug:railway": "./scripts/debug-railway-build.sh",
     "pre-deploy": "npm run test:build"
   },
   "dependencies": {

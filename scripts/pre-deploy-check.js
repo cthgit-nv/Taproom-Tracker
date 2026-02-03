@@ -91,19 +91,62 @@ const railwayJsonPath = path.resolve(projectRoot, "railway.json");
 if (fs.existsSync(railwayJsonPath)) {
   const railwayJson = JSON.parse(fs.readFileSync(railwayJsonPath, "utf-8"));
   
-  if (!railwayJson.build || !railwayJson.build.buildCommand) {
-    warnings.push("railway.json missing buildCommand");
+  if (!railwayJson.build || railwayJson.build.builder !== "NIXPACKS") {
+    warnings.push("railway.json should use NIXPACKS builder");
   } else {
-    console.log(`   ✓ Build command: ${railwayJson.build.buildCommand}`);
+    console.log(`   ✓ Builder: ${railwayJson.build.builder}`);
   }
   
   if (!railwayJson.deploy || !railwayJson.deploy.startCommand) {
-    warnings.push("railway.json missing startCommand");
+    errors.push("railway.json missing startCommand");
   } else {
     console.log(`   ✓ Start command: ${railwayJson.deploy.startCommand}`);
   }
 } else {
-  warnings.push("railway.json not found (optional but recommended)");
+  errors.push("railway.json not found (required for Railway deployment)");
+}
+
+// Check 4.5: Verify nixpacks.toml configuration
+console.log("\n4.5. Checking nixpacks.toml configuration...");
+const nixpacksTomlPath = path.resolve(projectRoot, "nixpacks.toml");
+if (fs.existsSync(nixpacksTomlPath)) {
+  const nixpacksContent = fs.readFileSync(nixpacksTomlPath, "utf-8");
+  
+  // Check for Node.js 20 reference
+  if (!nixpacksContent.includes("nodejs-20_x")) {
+    warnings.push("nixpacks.toml may not reference Node.js 20");
+  } else {
+    console.log("   ✓ Node.js 20 referenced in nixpacks.toml");
+  }
+  
+  // Check for npm reference
+  if (!nixpacksContent.includes("npm")) {
+    warnings.push("nixpacks.toml missing npm package");
+  } else {
+    console.log("   ✓ npm package referenced in nixpacks.toml");
+  }
+  
+  // Check for build phase
+  if (!nixpacksContent.includes("[phases.build]")) {
+    warnings.push("nixpacks.toml missing build phase");
+  } else {
+    console.log("   ✓ Build phase configured");
+  }
+} else {
+  errors.push("nixpacks.toml not found (required for Railway Nixpacks builds)");
+}
+
+// Check 4.6: Check for stale .nixpacks directory
+console.log("\n4.6. Checking for stale Nixpacks artifacts...");
+const nixpacksDir = path.resolve(projectRoot, ".nixpacks");
+if (fs.existsSync(nixpacksDir)) {
+  warnings.push(".nixpacks directory exists (should be gitignored, may contain stale files)");
+  const nixFiles = fs.readdirSync(nixpacksDir).filter(f => f.endsWith(".nix"));
+  if (nixFiles.length > 0) {
+    warnings.push(`Found ${nixFiles.length} .nix files in .nixpacks (these are auto-generated and may be outdated)`);
+  }
+} else {
+  console.log("   ✓ No stale .nixpacks directory");
 }
 
 // Check 5: Environment variable documentation
