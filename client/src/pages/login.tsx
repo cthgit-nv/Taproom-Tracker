@@ -1,35 +1,60 @@
 import { useState, useCallback, useEffect } from "react";
 import { useLocation } from "wouter";
-import { Beer, Delete, Lock } from "lucide-react";
+import { Beer, Delete, Lock, User } from "lucide-react";
 import { useMutation } from "@tanstack/react-query";
 import { apiRequest } from "@/lib/queryClient";
 import { useAuth } from "@/lib/auth-context";
 import type { User } from "@shared/schema";
 
+type LoginStep = "userId" | "pin";
+
 export default function LoginPage() {
+  const [step, setStep] = useState<LoginStep>("userId");
+  const [userId, setUserId] = useState("");
   const [pin, setPin] = useState("");
   const [error, setError] = useState(false);
   const [errorMessage, setErrorMessage] = useState("");
   const [, setLocation] = useLocation();
   const { login } = useAuth();
 
-  const loginMutation = useMutation({
-    mutationFn: async (pinCode: string) => {
-      const response = await apiRequest("POST", "/api/auth/login", { pin: pinCode });
-      return response.json();
+  // Step 1: Verify userId
+  const verifyUserIdMutation = useMutation({
+    mutationFn: async (userIdValue: string) => {
+      try {
+        const response = await apiRequest("POST", "/api/auth/verify-user-id", { userId: userIdValue });
+        return response.json();
+      } catch (err: any) {
+        // Parse error message from response
+        let errorMessage = "Invalid user ID. Please try again.";
+        if (err?.message) {
+          try {
+            const match = err.message.match(/\d+:\s*(.+)/);
+            if (match) {
+              const errorText = match[1];
+              try {
+                const errorObj = JSON.parse(errorText);
+                errorMessage = errorObj.error || errorMessage;
+              } catch {
+                errorMessage = errorText;
+              }
+            }
+          } catch {
+            // Use default message
+          }
+        }
+        throw new Error(errorMessage);
+      }
     },
-    onSuccess: (data: { user: User }) => {
-      login(data.user);
-      // Use setTimeout to ensure state is updated before navigation
-      setTimeout(() => {
-        setLocation("/dashboard");
-      }, 100);
+    onSuccess: () => {
+      setStep("pin");
+      setError(false);
+      setErrorMessage("");
     },
-    onError: () => {
+    onError: (err: any) => {
       setError(true);
-      setErrorMessage("Invalid PIN. Please try again.");
-      setPin("");
-      // Reset error state after animation completes (keep error visible longer)
+      const message = err?.message || "Invalid user ID. Please try again.";
+      setErrorMessage(message);
+      setUserId("");
       setTimeout(() => {
         setError(false);
         setErrorMessage("");
@@ -37,30 +62,118 @@ export default function LoginPage() {
     },
   });
 
-  // Auto-submit when PIN is complete
+  // Step 2: Login with userId + PIN
+  const loginMutation = useMutation({
+    mutationFn: async (pinCode: string) => {
+      try {
+        const response = await apiRequest("POST", "/api/auth/login", { 
+          userId: userId,
+          pin: pinCode 
+        });
+        return response.json();
+      } catch (err: any) {
+        // Parse error message from response
+        let errorMessage = "Invalid credentials. Please try again.";
+        if (err?.message) {
+          try {
+            const match = err.message.match(/\d+:\s*(.+)/);
+            if (match) {
+              const errorText = match[1];
+              try {
+                const errorObj = JSON.parse(errorText);
+                errorMessage = errorObj.error || errorMessage;
+              } catch {
+                errorMessage = errorText;
+              }
+            }
+          } catch {
+            // Use default message
+          }
+        }
+        throw new Error(errorMessage);
+      }
+    },
+    onSuccess: (data: { user: User }) => {
+      login(data.user);
+      setTimeout(() => {
+        setLocation("/dashboard");
+      }, 100);
+    },
+    onError: (err: any) => {
+      setError(true);
+      const message = err?.message || "Invalid credentials. Please try again.";
+      setErrorMessage(message);
+      setPin("");
+      setTimeout(() => {
+        setError(false);
+        setErrorMessage("");
+      }, 2500);
+    },
+  });
+
+  // Auto-submit when userId is complete (step 1)
   useEffect(() => {
-    if (pin.length === 4 && !loginMutation.isPending && !error) {
+    if (step === "userId" && userId.length === 6 && !verifyUserIdMutation.isPending && !error) {
+      verifyUserIdMutation.mutate(userId);
+    }
+  }, [userId, step, verifyUserIdMutation.isPending, error]);
+
+  // Auto-submit when PIN is complete (step 2)
+  useEffect(() => {
+    if (step === "pin" && pin.length === 4 && !loginMutation.isPending && !error) {
       loginMutation.mutate(pin);
     }
-  }, [pin, loginMutation.isPending, error]);
+  }, [pin, step, loginMutation.isPending, error]);
 
   const handleKeyPress = useCallback((digit: string) => {
-    if (pin.length < 4 && !loginMutation.isPending) {
-      setPin((prev) => prev + digit);
+    if (step === "userId") {
+      if (userId.length < 6 && !verifyUserIdMutation.isPending) {
+        setUserId((prev) => prev + digit);
+      }
+    } else {
+      if (pin.length < 4 && !loginMutation.isPending) {
+        setPin((prev) => prev + digit);
+      }
     }
-  }, [pin.length, loginMutation.isPending]);
+  }, [step, userId.length, pin.length, verifyUserIdMutation.isPending, loginMutation.isPending]);
 
   const handleDelete = useCallback(() => {
-    if (!loginMutation.isPending) {
-      setPin((prev) => prev.slice(0, -1));
+    if (step === "userId") {
+      if (!verifyUserIdMutation.isPending) {
+        setUserId((prev) => prev.slice(0, -1));
+      }
+    } else {
+      if (!loginMutation.isPending) {
+        setPin((prev) => prev.slice(0, -1));
+      }
     }
-  }, [loginMutation.isPending]);
+  }, [step, verifyUserIdMutation.isPending, loginMutation.isPending]);
 
   const handleClear = useCallback(() => {
-    if (!loginMutation.isPending) {
-      setPin("");
+    if (step === "userId") {
+      if (!verifyUserIdMutation.isPending) {
+        setUserId("");
+      }
+    } else {
+      if (!loginMutation.isPending) {
+        setPin("");
+      }
     }
-  }, [loginMutation.isPending]);
+  }, [step, verifyUserIdMutation.isPending, loginMutation.isPending]);
+
+  const handleBack = useCallback(() => {
+    if (step === "pin") {
+      setStep("userId");
+      setPin("");
+      setError(false);
+      setErrorMessage("");
+    }
+  }, [step]);
+
+  const isPending = step === "userId" ? verifyUserIdMutation.isPending : loginMutation.isPending;
+  const currentInput = step === "userId" ? userId : pin;
+  const maxLength = step === "userId" ? 6 : 4;
+  const inputDots = step === "userId" ? 6 : 4;
 
   return (
     <div className="min-h-screen flex flex-col items-center justify-center px-4 py-8 bg-[#051a11]">
@@ -75,32 +188,42 @@ export default function LoginPage() {
         <p className="text-sm text-white/60 mt-1">Taproom Inventory</p>
       </div>
 
-      {/* PIN Indicator Dots */}
+      {/* Step Indicator */}
       <div className="flex items-center gap-1 mb-3">
-        <Lock className="w-4 h-4 text-white/40 mr-2" />
-        <span className="text-sm text-white/60 font-medium">Enter PIN</span>
+        {step === "userId" ? (
+          <>
+            <User className="w-4 h-4 text-white/40 mr-2" />
+            <span className="text-sm text-white/60 font-medium">Enter Birthdate (MMDDYY)</span>
+          </>
+        ) : (
+          <>
+            <Lock className="w-4 h-4 text-white/40 mr-2" />
+            <span className="text-sm text-white/60 font-medium">Enter PIN</span>
+          </>
+        )}
       </div>
       
+      {/* Input Indicator Dots */}
       <div 
         className={`flex gap-4 mb-10 ${error ? "animate-shake" : ""}`}
-        data-testid="pin-dots-container"
+        data-testid={`${step}-dots-container`}
       >
-        {[0, 1, 2, 3].map((index) => (
+        {Array.from({ length: inputDots }).map((_, index) => (
           <div
             key={index}
-            data-testid={`pin-dot-${index}`}
+            data-testid={`${step}-dot-${index}`}
             className={`
               w-14 h-14 rounded-full border-2 transition-all duration-200 flex items-center justify-center
               ${
-                index < pin.length
+                index < currentInput.length
                   ? "bg-[#D4AF37] border-[#D4AF37]"
-                  : index === pin.length
+                  : index === currentInput.length
                   ? "border-[#D4AF37] bg-transparent animate-pulse-gold"
                   : "border-[#1A4D2E] bg-transparent"
               }
             `}
           >
-            {index < pin.length && (
+            {index < currentInput.length && (
               <div className="w-4 h-4 rounded-full bg-[#051a11]" />
             )}
           </div>
@@ -109,16 +232,33 @@ export default function LoginPage() {
 
       {/* Error Message */}
       {(error || errorMessage) && (
-        <p className="text-red-400 text-sm mb-4 font-medium" data-testid="text-error">
-          {errorMessage || "Invalid PIN. Please try again."}
+        <p className="text-red-400 text-sm mb-4 font-medium text-center max-w-xs" data-testid="text-error">
+          {errorMessage}
         </p>
       )}
 
       {/* Loading State */}
-      {loginMutation.isPending && (
+      {isPending && (
         <p className="text-[#D4AF37] text-sm mb-4 font-medium animate-pulse" data-testid="text-loading">
-          Verifying...
+          {step === "userId" ? "Verifying..." : "Logging in..."}
         </p>
+      )}
+
+      {/* Back Button (only on PIN step) */}
+      {step === "pin" && (
+        <button
+          onClick={handleBack}
+          disabled={isPending}
+          className="
+            mb-4 px-4 py-2 rounded-lg bg-[#0a2419] border-2 border-[#1A4D2E]
+            text-sm font-medium text-white/60
+            active:bg-[#1A4D2E] active:text-white
+            transition-all duration-100
+            disabled:opacity-30 disabled:cursor-not-allowed
+          "
+        >
+          ← Back
+        </button>
       )}
 
       {/* Numeric Keypad */}
@@ -127,7 +267,7 @@ export default function LoginPage() {
           <button
             key={digit}
             onClick={() => handleKeyPress(digit)}
-            disabled={loginMutation.isPending || pin.length >= 4}
+            disabled={isPending || currentInput.length >= maxLength}
             data-testid={`button-key-${digit}`}
             className="
               h-16 rounded-lg bg-[#0a2419] border-2 border-[#1A4D2E]
@@ -145,7 +285,7 @@ export default function LoginPage() {
         {/* Clear button */}
         <button
           onClick={handleClear}
-          disabled={loginMutation.isPending || pin.length === 0}
+          disabled={isPending || currentInput.length === 0}
           data-testid="button-clear"
           className="
             h-16 rounded-lg bg-[#0a2419] border-2 border-[#1A4D2E]
@@ -162,7 +302,7 @@ export default function LoginPage() {
         {/* Zero button */}
         <button
           onClick={() => handleKeyPress("0")}
-          disabled={loginMutation.isPending || pin.length >= 4}
+          disabled={isPending || currentInput.length >= maxLength}
           data-testid="button-key-0"
           className="
             h-16 rounded-lg bg-[#0a2419] border-2 border-[#1A4D2E]
@@ -179,7 +319,7 @@ export default function LoginPage() {
         {/* Delete button */}
         <button
           onClick={handleDelete}
-          disabled={loginMutation.isPending || pin.length === 0}
+          disabled={isPending || currentInput.length === 0}
           data-testid="button-delete"
           className="
             h-16 rounded-lg bg-[#0a2419] border-2 border-[#1A4D2E]
@@ -196,7 +336,10 @@ export default function LoginPage() {
 
       {/* Footer hint */}
       <p className="text-xs text-white/30 mt-8 text-center">
-        Contact manager if you forgot your PIN
+        {step === "userId" 
+          ? "Enter your birthdate in MMDDYY format"
+          : "Contact manager if you forgot your PIN"
+        }
       </p>
     </div>
   );

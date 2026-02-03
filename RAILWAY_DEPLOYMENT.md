@@ -69,18 +69,39 @@ BARCODESPIDER_API_TOKEN=your_token
 
 Railway should auto-detect these, but verify in **Settings** → **Build**:
 
-- **Build Command:** `npm run build`
-- **Start Command:** `npm start`
+- **Build Command:** `npm ci && npm run build` (configured in `railway.json`)
+- **Start Command:** `npm start` (configured in `railway.json`)
 - **Root Directory:** `/` (root)
 
-## Step 5: Deploy
+**Note:** The project includes `railway.json` with optimized build settings and health check configuration.
+
+## Step 5: Pre-Deployment Testing (Recommended)
+
+Before deploying, test locally to catch issues early:
+
+```bash
+# Run pre-deployment validation
+npm run pre-deploy
+
+# Or test build and validation separately
+npm run test:build
+```
+
+This will:
+- Build the application
+- Validate build output structure
+- Check required files exist
+- Verify configuration
+
+## Step 6: Deploy
 
 1. Railway will automatically deploy when you push to your main branch
 2. Or click **"Deploy"** in the Railway dashboard
 3. Watch the build logs in real-time
 4. Wait for deployment to complete (usually 2-3 minutes)
+5. Check the health endpoint: `https://your-app.up.railway.app/health`
 
-## Step 6: Run Database Migrations
+## Step 7: Run Database Migrations
 
 After first deployment, you need to set up your database schema:
 
@@ -111,14 +132,14 @@ railway run npm run db:push
 2. Add a one-off command: `npm run db:push`
 3. Run it once to set up the database
 
-## Step 7: Verify Deployment
+## Step 8: Verify Deployment
 
 1. Railway provides a default domain (e.g., `your-app.up.railway.app`)
 2. Visit the URL to test your app
 3. Check logs in Railway dashboard for any errors
 4. Test login and basic functionality
 
-## Step 8: Set Up Custom Domain (Optional)
+## Step 9: Set Up Custom Domain (Optional)
 
 1. Go to your service → **Settings** → **Networking**
 2. Click **"Generate Domain"** or **"Custom Domain"**
@@ -149,12 +170,21 @@ Railway automatically monitors your service:
 
 ## Troubleshooting
 
+**For detailed debugging, see [`DEPLOYMENT_DEBUG.md`](DEPLOYMENT_DEBUG.md)**
+
 ### Build Fails
 
-1. Check build logs for errors
-2. Verify `package.json` has correct build script
-3. Ensure all dependencies are listed in `package.json`
-4. Check Node.js version (Railway uses Node 20 by default)
+1. **Test locally first:**
+   ```bash
+   npm run build
+   npm run test:build
+   ```
+
+2. Check build logs in Railway dashboard
+3. Verify `package.json` has correct build script
+4. Ensure all dependencies are listed in `package.json`
+5. Check Node.js version (Railway uses Node 20 by default)
+6. Run pre-deployment check: `npm run pre-deploy`
 
 ### Database Connection Issues
 
@@ -164,10 +194,12 @@ Railway automatically monitors your service:
 
 ### App Crashes on Start
 
-1. Check logs for error messages
-2. Verify `SESSION_SECRET` is set
-3. Ensure `PORT` environment variable is set (Railway sets this automatically)
+1. Check logs for error messages (app now validates environment on startup)
+2. Verify `SESSION_SECRET` is set (required in production)
+3. Ensure `DATABASE_URL` is set (Railway sets this automatically for Railway PostgreSQL)
 4. Check that database migrations have run
+5. Verify health endpoint: `curl https://your-app.up.railway.app/health`
+6. Check environment validation output in logs (shows which variables are set/missing)
 
 ### Environment Variables Not Working
 

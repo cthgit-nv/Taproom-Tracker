@@ -868,6 +868,29 @@ export default function InventorySessionPage() {
               </Button>
             </div>
 
+            {/* Progress Indicator */}
+            {displayProducts.length > 0 && (
+              <Card className="bg-[#0a2419] border-2 border-[#1A4D2E]">
+                <CardContent className="p-4">
+                  <div className="flex items-center justify-between mb-2">
+                    <span className="text-sm text-white/60">Progress</span>
+                    <span className="text-sm font-medium text-[#D4AF37]">
+                      {counts.size} of {displayProducts.length} counted
+                    </span>
+                  </div>
+                  <div className="w-full h-2 bg-[#1A4D2E] rounded-full overflow-hidden">
+                    <div 
+                      className="h-full bg-[#D4AF37] transition-all duration-300"
+                      style={{ width: `${displayProducts.length > 0 ? (counts.size / displayProducts.length) * 100 : 0}%` }}
+                    />
+                  </div>
+                  <p className="text-xs text-white/40 mt-2 text-center">
+                    {displayProducts.length - counts.size} items remaining
+                  </p>
+                </CardContent>
+              </Card>
+            )}
+
             <div className="space-y-2">
               {displayProducts.map((product) => {
                 const counted = counts.has(product.id);
@@ -1782,6 +1805,26 @@ function ScanModeContent({
         </Button>
       </div>
 
+      {/* Progress Indicator for Scan Mode */}
+      {displayProducts.length > 0 && (
+        <Card className="bg-[#0a2419] border-2 border-[#1A4D2E]">
+          <CardContent className="p-3">
+            <div className="flex items-center justify-between">
+              <span className="text-xs text-white/60">Progress</span>
+              <span className="text-xs font-medium text-[#D4AF37]">
+                {countsSize} of {displayProducts.length} counted
+              </span>
+            </div>
+            <div className="w-full h-1.5 bg-[#1A4D2E] rounded-full overflow-hidden mt-2">
+              <div 
+                className="h-full bg-[#D4AF37] transition-all duration-300"
+                style={{ width: `${displayProducts.length > 0 ? (countsSize / displayProducts.length) * 100 : 0}%` }}
+              />
+            </div>
+          </CardContent>
+        </Card>
+      )}
+
       {isOffline && (
         <Card className="bg-orange-500/10 border-2 border-orange-500/50">
           <CardContent className="p-3 flex items-center gap-2">
@@ -1808,9 +1851,12 @@ function ScanModeContent({
           data-testid="button-use-text"
         >
           <List className="w-4 h-4 mr-2" />
-          Type
+          Manual Entry
         </Button>
       </div>
+      <p className="text-xs text-white/40 text-center mb-2">
+        {useCameraScanner ? "Point camera at barcode" : "Search by name or enter UPC manually"}
+      </p>
 
       {useCameraScanner ? (
         <Card className="bg-[#0a2419] border-2 border-[#D4AF37] overflow-hidden">

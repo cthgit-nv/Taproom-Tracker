@@ -13,7 +13,11 @@ import {
   CheckCircle,
   AlertCircle,
   Trash2,
-  ChevronRight
+  ChevronRight,
+  TrendingUp,
+  TrendingDown,
+  BarChart3,
+  Filter
 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import type { Zone, InventorySession } from "@shared/schema";
@@ -185,149 +189,419 @@ export default function InventoryDashboardPage() {
       </header>
 
       <main className="p-4 space-y-6">
-        {/* Active Session Banner */}
-        {activeSession && (
-          <Card className="bg-[#D4AF37]/10 border-2 border-[#D4AF37]">
-            <CardContent className="p-4">
-              <div className="flex items-center justify-between mb-3">
-                <div className="flex items-center gap-2">
-                  <Clock className="w-5 h-5 text-[#D4AF37]" />
-                  <span className="font-medium text-[#D4AF37]">Session In Progress</span>
-                </div>
-                <Badge variant="outline" className="border-[#D4AF37] text-[#D4AF37]">
-                  {zones.find(z => z.id === activeSession.zoneId)?.name}
-                </Badge>
-              </div>
-              <p className="text-sm text-white/60 mb-4">
-                Started {formatTimeAgo(activeSession.startedAt?.toString() || null)}
-              </p>
-              <div className="flex gap-2">
-                <Button
-                  onClick={handleContinueSession}
-                  className="flex-1 bg-[#D4AF37] text-[#051a11] font-semibold"
-                  data-testid="button-continue-session"
-                >
-                  <Play className="w-4 h-4 mr-2" />
-                  Continue
-                </Button>
-                <Button
-                  variant="outline"
-                  onClick={() => cancelSessionMutation.mutate(activeSession.id)}
-                  disabled={cancelSessionMutation.isPending}
-                  className="border-red-500 text-red-400"
-                  data-testid="button-cancel-session"
-                >
-                  <Trash2 className="w-4 h-4" />
-                </Button>
-              </div>
-            </CardContent>
-          </Card>
-        )}
-
-        {/* Zone List */}
-        <section>
-          <h2 className="text-lg font-medium text-white mb-4">Zones</h2>
-          <div className="space-y-3">
-            {zonesWithHistory.map((zone) => {
-              const hasActiveSession = zone.activeSession !== null;
-              const isCurrentActiveZone = activeSession?.zoneId === zone.id;
-              
-              return (
-                <Card 
-                  key={zone.id}
-                  className={`
-                    bg-[#0a2419] border-2 overflow-visible
-                    ${isCurrentActiveZone 
-                      ? "border-[#D4AF37]" 
-                      : "border-[#1A4D2E] hover-elevate cursor-pointer"
-                    }
-                  `}
-                  onClick={() => handleZoneClick(zone)}
-                  data-testid={`zone-card-${zone.id}`}
-                >
-                  <CardContent className="p-4">
-                    <div className="flex items-center justify-between">
-                      <div className="flex-1">
-                        <div className="flex items-center gap-2 mb-1">
-                          <p className="font-medium text-white">{zone.name}</p>
-                          {isCurrentActiveZone && (
-                            <Badge className="bg-[#D4AF37]/20 text-[#D4AF37] border-none">
-                              Active
-                            </Badge>
-                          )}
-                        </div>
-                        <div className="flex items-center gap-4 text-sm">
-                          {zone.lastCompleted ? (
-                            <div className="flex items-center gap-1 text-green-400">
-                              <CheckCircle className="w-4 h-4" />
-                              <span>{formatTimeAgo(zone.lastCompleted)}</span>
-                            </div>
-                          ) : (
-                            <div className="flex items-center gap-1 text-orange-400">
-                              <AlertCircle className="w-4 h-4" />
-                              <span>Never counted</span>
-                            </div>
-                          )}
-                        </div>
-                        {zone.description && (
-                          <p className="text-xs text-white/40 mt-1">{zone.description}</p>
-                        )}
-                      </div>
-                      <ChevronRight className="w-5 h-5 text-white/40" />
-                    </div>
-                  </CardContent>
-                </Card>
-              );
-            })}
-          </div>
-        </section>
-
-        {/* Quick Start Button */}
-        {!activeSession && (
-          <Link href="/inventory">
-            <Button
-              className="w-full h-14 bg-[#1A4D2E] text-[#D4AF37] border-2 border-[#D4AF37] text-lg font-semibold"
-              data-testid="button-start-new-inventory"
-            >
-              Start New Inventory
-            </Button>
-          </Link>
-        )}
-
-        {/* Recent Sessions */}
-        {sessions.filter(s => s.status === "completed").length > 0 && (
-          <section>
-            <h2 className="text-lg font-medium text-white mb-4">Recent Sessions</h2>
-            <div className="space-y-2">
-              {sessions
-                .filter(s => s.status === "completed")
-                .sort((a, b) => 
-                  new Date(b.completedAt || 0).getTime() - new Date(a.completedAt || 0).getTime()
-                )
-                .slice(0, 5)
-                .map((session) => {
-                  const zone = zones.find(z => z.id === session.zoneId);
-                  return (
-                    <Card key={session.id} className="bg-[#0a2419] border border-[#1A4D2E]">
-                      <CardContent className="p-3 flex items-center gap-3">
-                        <CheckCircle className="w-5 h-5 text-green-400" />
-                        <div className="flex-1">
-                          <p className="text-sm font-medium text-white">{zone?.name}</p>
-                          <p className="text-xs text-white/40">
-                            {session.completedAt 
-                              ? new Date(session.completedAt).toLocaleString() 
-                              : "Unknown"
-                            }
-                          </p>
-                        </div>
-                      </CardContent>
-                    </Card>
-                  );
-                })}
-            </div>
-          </section>
+        {/* Role-based view rendering */}
+        {user?.role === "staff" ? (
+          <StaffInventoryView
+            activeSession={activeSession}
+            zonesWithHistory={zonesWithHistory}
+            zones={zones}
+            formatTimeAgo={formatTimeAgo}
+            handleContinueSession={handleContinueSession}
+            handleZoneClick={handleZoneClick}
+            cancelSessionMutation={cancelSessionMutation}
+          />
+        ) : (
+          <AdminInventoryView
+            activeSession={activeSession}
+            zonesWithHistory={zonesWithHistory}
+            zones={zones}
+            sessions={sessions}
+            formatTimeAgo={formatTimeAgo}
+            handleContinueSession={handleContinueSession}
+            handleZoneClick={handleZoneClick}
+            handleViewSession={handleViewSession}
+            cancelSessionMutation={cancelSessionMutation}
+          />
         )}
       </main>
     </div>
+  );
+}
+
+// Simplified view for staff - focus on counting tasks
+function StaffInventoryView({
+  activeSession,
+  zonesWithHistory,
+  zones,
+  formatTimeAgo,
+  handleContinueSession,
+  handleZoneClick,
+  cancelSessionMutation,
+}: {
+  activeSession: InventorySession | null | undefined;
+  zonesWithHistory: ZoneWithHistory[];
+  zones: Zone[];
+  formatTimeAgo: (dateStr: string | null) => string;
+  handleContinueSession: () => void;
+  handleZoneClick: (zone: ZoneWithHistory) => void;
+  cancelSessionMutation: ReturnType<typeof useMutation>;
+}) {
+  const [, setLocation] = useLocation();
+
+  return (
+    <>
+      {/* Active Session Banner */}
+      {activeSession && (
+        <Card className="bg-[#D4AF37]/10 border-2 border-[#D4AF37]">
+          <CardContent className="p-4">
+            <div className="flex items-center justify-between mb-3">
+              <div className="flex items-center gap-2">
+                <Clock className="w-5 h-5 text-[#D4AF37]" />
+                <span className="font-medium text-[#D4AF37]">Session In Progress</span>
+              </div>
+              <Badge variant="outline" className="border-[#D4AF37] text-[#D4AF37]">
+                {zones.find(z => z.id === activeSession.zoneId)?.name}
+              </Badge>
+            </div>
+            <p className="text-sm text-white/60 mb-4">
+              Started {formatTimeAgo(activeSession.startedAt?.toString() || null)}
+            </p>
+            <div className="flex gap-2">
+              <Button
+                onClick={handleContinueSession}
+                className="flex-1 bg-[#D4AF37] text-[#051a11] font-semibold"
+                data-testid="button-continue-session"
+              >
+                <Play className="w-4 h-4 mr-2" />
+                Continue Count
+              </Button>
+              <Button
+                variant="outline"
+                onClick={() => cancelSessionMutation.mutate(activeSession.id)}
+                disabled={cancelSessionMutation.isPending}
+                className="border-red-500 text-red-400"
+                data-testid="button-cancel-session"
+              >
+                <Trash2 className="w-4 h-4" />
+              </Button>
+            </div>
+          </CardContent>
+        </Card>
+      )}
+
+      {/* Zone List - Simplified */}
+      <section>
+        <h2 className="text-lg font-medium text-white mb-4">Zones to Count</h2>
+        <div className="space-y-3">
+          {zonesWithHistory.map((zone) => {
+            const isCurrentActiveZone = activeSession?.zoneId === zone.id;
+            
+            return (
+              <Card 
+                key={zone.id}
+                className={`
+                  bg-[#0a2419] border-2 overflow-visible
+                  ${isCurrentActiveZone 
+                    ? "border-[#D4AF37]" 
+                    : zone.isStale
+                    ? "border-orange-500/50"
+                    : "border-[#1A4D2E] hover-elevate cursor-pointer"
+                  }
+                `}
+                onClick={() => handleZoneClick(zone)}
+                data-testid={`zone-card-${zone.id}`}
+              >
+                <CardContent className="p-4">
+                  <div className="flex items-center justify-between">
+                    <div className="flex-1">
+                      <div className="flex items-center gap-2 mb-1">
+                        <p className="font-medium text-white">{zone.name}</p>
+                        {isCurrentActiveZone && (
+                          <Badge className="bg-[#D4AF37]/20 text-[#D4AF37] border-none">
+                            Active
+                          </Badge>
+                        )}
+                        {zone.isStale && !isCurrentActiveZone && (
+                          <Badge className="bg-orange-500/20 text-orange-400 border-none">
+                            Needs Count
+                          </Badge>
+                        )}
+                      </div>
+                      <div className="flex items-center gap-4 text-sm">
+                        {zone.lastCompleted ? (
+                          <div className="flex items-center gap-1 text-green-400">
+                            <CheckCircle className="w-4 h-4" />
+                            <span>Last: {formatTimeAgo(zone.lastCompleted)}</span>
+                          </div>
+                        ) : (
+                          <div className="flex items-center gap-1 text-orange-400">
+                            <AlertCircle className="w-4 h-4" />
+                            <span>Never counted</span>
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                    <ChevronRight className="w-5 h-5 text-white/40" />
+                  </div>
+                </CardContent>
+              </Card>
+            );
+          })}
+        </div>
+      </section>
+
+      {/* Quick Start Button */}
+      {!activeSession && (
+        <Link href="/inventory">
+          <Button
+            className="w-full h-14 bg-[#1A4D2E] text-[#D4AF37] border-2 border-[#D4AF37] text-lg font-semibold"
+            data-testid="button-start-new-inventory"
+          >
+            Start New Count
+          </Button>
+        </Link>
+      )}
+    </>
+  );
+}
+
+// Enhanced view for admin/owner - includes reports and analytics
+function AdminInventoryView({
+  activeSession,
+  zonesWithHistory,
+  zones,
+  sessions,
+  formatTimeAgo,
+  handleContinueSession,
+  handleZoneClick,
+  handleViewSession,
+  cancelSessionMutation,
+}: {
+  activeSession: InventorySession | null | undefined;
+  zonesWithHistory: ZoneWithHistory[];
+  zones: Zone[];
+  sessions: InventorySession[];
+  formatTimeAgo: (dateStr: string | null) => string;
+  handleContinueSession: () => void;
+  handleZoneClick: (zone: ZoneWithHistory) => void;
+  handleViewSession: (sessionId: number) => void;
+  cancelSessionMutation: ReturnType<typeof useMutation>;
+}) {
+  const completedSessions = sessions.filter(s => s.status === "completed");
+  const staleZones = zonesWithHistory.filter(z => z.isStale && !z.activeSession);
+  const recentZones = zonesWithHistory.filter(z => !z.isStale && z.lastCompleted);
+
+  // Calculate completion stats
+  const totalSessions = completedSessions.length;
+  const sessionsLast7Days = completedSessions.filter(s => {
+    if (!s.completedAt) return false;
+    const daysAgo = (Date.now() - new Date(s.completedAt).getTime()) / (1000 * 60 * 60 * 24);
+    return daysAgo <= 7;
+  }).length;
+
+  return (
+    <>
+      {/* Stats Overview */}
+      <section>
+        <div className="grid grid-cols-3 gap-3 mb-4">
+          <Card className="bg-[#0a2419] border-2 border-[#1A4D2E]">
+            <CardContent className="p-3">
+              <p className="text-xs text-white/60 mb-1">Stale Zones</p>
+              <p className="text-2xl font-bold text-orange-400">{staleZones.length}</p>
+            </CardContent>
+          </Card>
+          <Card className="bg-[#0a2419] border-2 border-[#1A4D2E]">
+            <CardContent className="p-3">
+              <p className="text-xs text-white/60 mb-1">This Week</p>
+              <p className="text-2xl font-bold text-green-400">{sessionsLast7Days}</p>
+            </CardContent>
+          </Card>
+          <Card className="bg-[#0a2419] border-2 border-[#1A4D2E]">
+            <CardContent className="p-3">
+              <p className="text-xs text-white/60 mb-1">Total Sessions</p>
+              <p className="text-2xl font-bold text-white">{totalSessions}</p>
+            </CardContent>
+          </Card>
+        </div>
+      </section>
+
+      {/* Active Session Banner */}
+      {activeSession && (
+        <Card className="bg-[#D4AF37]/10 border-2 border-[#D4AF37]">
+          <CardContent className="p-4">
+            <div className="flex items-center justify-between mb-3">
+              <div className="flex items-center gap-2">
+                <Clock className="w-5 h-5 text-[#D4AF37]" />
+                <span className="font-medium text-[#D4AF37]">Session In Progress</span>
+              </div>
+              <Badge variant="outline" className="border-[#D4AF37] text-[#D4AF37]">
+                {zones.find(z => z.id === activeSession.zoneId)?.name}
+              </Badge>
+            </div>
+            <p className="text-sm text-white/60 mb-4">
+              Started {formatTimeAgo(activeSession.startedAt?.toString() || null)}
+            </p>
+            <div className="flex gap-2">
+              <Button
+                onClick={handleContinueSession}
+                className="flex-1 bg-[#D4AF37] text-[#051a11] font-semibold"
+                data-testid="button-continue-session"
+              >
+                <Play className="w-4 h-4 mr-2" />
+                Continue
+              </Button>
+              <Button
+                variant="outline"
+                onClick={() => cancelSessionMutation.mutate(activeSession.id)}
+                disabled={cancelSessionMutation.isPending}
+                className="border-red-500 text-red-400"
+                data-testid="button-cancel-session"
+              >
+                <Trash2 className="w-4 h-4" />
+              </Button>
+            </div>
+          </CardContent>
+        </Card>
+      )}
+
+      {/* Zones Needing Attention */}
+      {staleZones.length > 0 && (
+        <section>
+          <div className="flex items-center gap-2 mb-4">
+            <AlertCircle className="w-5 h-5 text-orange-400" />
+            <h2 className="text-lg font-medium text-white">Needs Counting</h2>
+          </div>
+          <div className="space-y-3">
+            {staleZones.map((zone) => (
+              <Card 
+                key={zone.id}
+                className="bg-[#0a2419] border-2 border-orange-500/50 hover-elevate cursor-pointer"
+                onClick={() => handleZoneClick(zone)}
+                data-testid={`stale-zone-${zone.id}`}
+              >
+                <CardContent className="p-4">
+                  <div className="flex items-center justify-between">
+                    <div className="flex-1">
+                      <div className="flex items-center gap-2 mb-1">
+                        <p className="font-medium text-white">{zone.name}</p>
+                        <Badge className="bg-orange-500/20 text-orange-400 border-none">
+                          Overdue
+                        </Badge>
+                      </div>
+                      <p className="text-sm text-white/60">
+                        {zone.lastCompleted ? `Last counted: ${formatTimeAgo(zone.lastCompleted)}` : "Never counted"}
+                      </p>
+                    </div>
+                    <ChevronRight className="w-5 h-5 text-white/40" />
+                  </div>
+                </CardContent>
+              </Card>
+            ))}
+          </div>
+        </section>
+      )}
+
+      {/* All Zones */}
+      <section>
+        <h2 className="text-lg font-medium text-white mb-4">All Zones</h2>
+        <div className="space-y-3">
+          {zonesWithHistory.map((zone) => {
+            const isCurrentActiveZone = activeSession?.zoneId === zone.id;
+            
+            return (
+              <Card 
+                key={zone.id}
+                className={`
+                  bg-[#0a2419] border-2 overflow-visible
+                  ${isCurrentActiveZone 
+                    ? "border-[#D4AF37]" 
+                    : "border-[#1A4D2E] hover-elevate cursor-pointer"
+                  }
+                `}
+                onClick={() => handleZoneClick(zone)}
+                data-testid={`zone-card-${zone.id}`}
+              >
+                <CardContent className="p-4">
+                  <div className="flex items-center justify-between">
+                    <div className="flex-1">
+                      <div className="flex items-center gap-2 mb-1">
+                        <p className="font-medium text-white">{zone.name}</p>
+                        {isCurrentActiveZone && (
+                          <Badge className="bg-[#D4AF37]/20 text-[#D4AF37] border-none">
+                            Active
+                          </Badge>
+                        )}
+                      </div>
+                      <div className="flex items-center gap-4 text-sm">
+                        {zone.lastCompleted ? (
+                          <div className="flex items-center gap-1 text-green-400">
+                            <CheckCircle className="w-4 h-4" />
+                            <span>{formatTimeAgo(zone.lastCompleted)}</span>
+                          </div>
+                        ) : (
+                          <div className="flex items-center gap-1 text-orange-400">
+                            <AlertCircle className="w-4 h-4" />
+                            <span>Never counted</span>
+                          </div>
+                        )}
+                      </div>
+                      {zone.description && (
+                        <p className="text-xs text-white/40 mt-1">{zone.description}</p>
+                      )}
+                    </div>
+                    <ChevronRight className="w-5 h-5 text-white/40" />
+                  </div>
+                </CardContent>
+              </Card>
+            );
+          })}
+        </div>
+      </section>
+
+      {/* Quick Start Button */}
+      {!activeSession && (
+        <Link href="/inventory">
+          <Button
+            className="w-full h-14 bg-[#1A4D2E] text-[#D4AF37] border-2 border-[#D4AF37] text-lg font-semibold"
+            data-testid="button-start-new-inventory"
+          >
+            Start New Inventory
+          </Button>
+        </Link>
+      )}
+
+      {/* Recent Sessions with Details */}
+      {completedSessions.length > 0 && (
+        <section>
+          <div className="flex items-center justify-between mb-4">
+            <h2 className="text-lg font-medium text-white">Recent Sessions</h2>
+            <Badge variant="outline" className="border-[#1A4D2E] text-white/60">
+              {completedSessions.length} total
+            </Badge>
+          </div>
+          <div className="space-y-2">
+            {completedSessions
+              .sort((a, b) => 
+                new Date(b.completedAt || 0).getTime() - new Date(a.completedAt || 0).getTime()
+              )
+              .slice(0, 10)
+              .map((session) => {
+                const zone = zones.find(z => z.id === session.zoneId);
+                return (
+                  <Card 
+                    key={session.id} 
+                    className="bg-[#0a2419] border border-[#1A4D2E] hover-elevate cursor-pointer"
+                    onClick={() => handleViewSession(session.id)}
+                  >
+                    <CardContent className="p-3 flex items-center gap-3">
+                      <CheckCircle className="w-5 h-5 text-green-400" />
+                      <div className="flex-1">
+                        <p className="text-sm font-medium text-white">{zone?.name}</p>
+                        <p className="text-xs text-white/40">
+                          {session.completedAt 
+                            ? new Date(session.completedAt).toLocaleString() 
+                            : "Unknown"
+                          }
+                        </p>
+                      </div>
+                      <ChevronRight className="w-4 h-4 text-white/40" />
+                    </CardContent>
+                  </Card>
+                );
+              })}
+          </div>
+        </section>
+      )}
+    </>
   );
 }

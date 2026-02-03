@@ -7,12 +7,15 @@ import { z } from "zod";
 // TABLE DEFINITIONS (All tables first)
 // ==========================================
 
-// Users table - staff, admin, and owner authentication via PIN
+// Users table - staff, admin, and owner authentication via userId (birthdate) + PIN
 // Roles: owner (super admin), admin (GM), staff (regular operations)
+// userId: birthdate in MMDDYY format (e.g., 060385 for June 3, 1985)
+// Note: userId is nullable to support migration from old schema
 export const users = pgTable("users", {
   id: integer("id").primaryKey().generatedAlwaysAsIdentity(),
+  userId: varchar("user_id", { length: 6 }).unique(), // Birthdate MMDDYY format (nullable for migration)
   name: text("name").notNull(),
-  pinCode: varchar("pin_code", { length: 4 }).notNull().unique(),
+  pinCode: varchar("pin_code", { length: 64 }).notNull(), // Hashed PIN (SHA-256 produces 64 char hex)
   role: text("role", { enum: ["owner", "admin", "staff"] }).notNull().default("staff"),
 });
 
@@ -174,6 +177,7 @@ export const receivingLogs = pgTable("receiving_logs", {
   productId: integer("product_id").references(() => products.id).notNull(),
   quantity: real("quantity").notNull(),
   isKeg: boolean("is_keg").notNull().default(false),
+  zoneId: integer("zone_id").references(() => zones.id),
   receivedAt: timestamp("received_at").notNull().defaultNow(),
   isSimulation: boolean("is_simulation").notNull().default(false),
 });
@@ -417,10 +421,17 @@ export type PricingDefault = typeof pricingDefaults.$inferSelect;
 // VALIDATION SCHEMAS
 // ==========================================
 
+// Two-step login: first userId (birthdate), then PIN
+export const userIdLoginSchema = z.object({
+  userId: z.string().length(6).regex(/^\d{6}$/, "User ID must be 6 digits (MMDDYY format)"),
+});
+
 export const pinLoginSchema = z.object({
+  userId: z.string().length(6).regex(/^\d{6}$/, "User ID must be 6 digits (MMDDYY format)"),
   pin: z.string().length(4).regex(/^\d{4}$/, "PIN must be 4 digits"),
 });
 
+export type UserIdLogin = z.infer<typeof userIdLoginSchema>;
 export type PinLogin = z.infer<typeof pinLoginSchema>;
 
 // Partial update schema for products (editable fields)

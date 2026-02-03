@@ -29,10 +29,10 @@ import {
   Star
 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
-import type { Product, Distributor, Settings } from "@shared/schema";
+import type { Product, Distributor, Settings, Zone } from "@shared/schema";
 import { untappdService, type UntappdBeer } from "@/services/UntappdService";
 
-type Mode = "scanning" | "known_product" | "new_product";
+type Mode = "scanning" | "manual_entry" | "known_product" | "new_product";
 
 // Helper to normalize Barcode Spider category to our beverage types
 // Uses both category and parentCategory for better detection
@@ -154,7 +154,11 @@ export default function ReceivingPage() {
   const [scannedUpc, setScannedUpc] = useState<string | null>(null);
   const [foundProduct, setFoundProduct] = useState<Product | null>(null);
   const [quantity, setQuantity] = useState("");
-  const [recentReceived, setRecentReceived] = useState<Array<{product: Product; qty: number; isKeg: boolean}>>([]);
+  const [selectedZone, setSelectedZone] = useState<number | null>(null);
+  const [recentReceived, setRecentReceived] = useState<Array<{product: Product; qty: number; isKeg: boolean; zoneId: number | null}>>([]);
+  
+  // Manual entry search state
+  const [manualSearchQuery, setManualSearchQuery] = useState("");
   
   // New product form
   const [newProductName, setNewProductName] = useState("");
@@ -208,6 +212,10 @@ export default function ReceivingPage() {
     queryKey: ["/api/products"],
   });
 
+  const { data: zones = [] } = useQuery<Zone[]>({
+    queryKey: ["/api/zones"],
+  });
+
   const { data: settings } = useQuery<Settings>({
     queryKey: ["/api/settings"],
   });
@@ -220,7 +228,7 @@ export default function ReceivingPage() {
   }, [settings]);
 
   const receiveMutation = useMutation({
-    mutationFn: async (data: { productId: number; quantity: number; isKeg: boolean }) => {
+    mutationFn: async (data: { productId: number; quantity: number; isKeg: boolean; zoneId?: number | null }) => {
       const res = await apiRequest("POST", "/api/receiving", data);
       return res.json();
     },
@@ -228,7 +236,7 @@ export default function ReceivingPage() {
       const product = products.find(p => p.id === variables.productId) || foundProduct;
       if (product) {
         setRecentReceived([
-          { product, qty: variables.quantity, isKeg: variables.isKeg },
+          { product, qty: variables.quantity, isKeg: variables.isKeg, zoneId: variables.zoneId || null },
           ...recentReceived.slice(0, 9)
         ]);
       }
@@ -479,6 +487,33 @@ export default function ReceivingPage() {
     lookupProduct(upc);
   };
 
+  const handleManualSearch = () => {
+    if (!manualSearchQuery.trim()) return;
+    
+    const cleanQuery = manualSearchQuery.toLowerCase().trim();
+    const filtered = products.filter((p) => 
+      p.name.toLowerCase().includes(cleanQuery) ||
+      (p.upc && p.upc.includes(cleanQuery)) ||
+      (p.brand && p.brand.toLowerCase().includes(cleanQuery))
+    );
+
+    if (filtered.length === 1) {
+      // Single match - go directly to known product
+      setFoundProduct(filtered[0]);
+      setIsKeg(filtered[0].isSoldByVolume || false);
+      setMode("known_product");
+      setManualSearchQuery("");
+    } else if (filtered.length === 0) {
+      // No matches - go to new product creation
+      setNewProductName(manualSearchQuery);
+      setNewProductUpc("");
+      setScannedUpc(null);
+      setMode("new_product");
+      setManualSearchQuery("");
+    }
+    // If multiple matches, the UI will show them and user can select
+  };
+
   const handleReceive = () => {
     if (!foundProduct) return;
     
@@ -487,6 +522,7 @@ export default function ReceivingPage() {
         productId: foundProduct.id,
         quantity: 1,
         isKeg: true,
+        zoneId: selectedZone,
       });
     } else {
       const qty = parseInt(quantity);
@@ -502,6 +538,7 @@ export default function ReceivingPage() {
         productId: foundProduct.id,
         quantity: qty,
         isKeg: false,
+        zoneId: selectedZone,
       });
     }
   };
@@ -534,9 +571,11 @@ export default function ReceivingPage() {
     setScannedUpc(null);
     setFoundProduct(null);
     setQuantity("");
+    setSelectedZone(null);
     setNewProductName("");
     setNewProductDistributor(null);
     setIsKeg(false);
+    setManualSearchQuery("");
     // Reset Untappd fields
     setSelectedUntappdBeer(null);
     setNewProductAbv(null);
@@ -615,7 +654,7 @@ export default function ReceivingPage() {
             variant="ghost"
             size="icon"
             onClick={() => {
-              if (mode === "scanning") {
+              if (mode === "scanning" || mode === "manual_entry") {
                 setLocation("/dashboard");
               } else {
                 resetToScanning();
@@ -630,6 +669,7 @@ export default function ReceivingPage() {
             <h1 className="text-lg font-semibold text-white">Receiving</h1>
             <p className="text-sm text-white/60">
               {mode === "scanning" && "Scan incoming items"}
+              {mode === "manual_entry" && "Search or enter product"}
               {mode === "known_product" && "Enter quantity"}
               {mode === "new_product" && "New product"}
             </p>
@@ -638,6 +678,30 @@ export default function ReceivingPage() {
       </header>
 
       <main className="p-4 space-y-4">
+        {/* Mode Toggle - Scan vs Manual Entry */}
+        {(mode === "scanning" || mode === "manual_entry") && (
+          <div className="flex gap-2 mb-2">
+            <Button
+              variant={mode === "scanning" ? "default" : "outline"}
+              onClick={() => setMode("scanning")}
+              className={mode === "scanning" ? "flex-1 bg-[#D4AF37] text-[#051a11]" : "flex-1 border-[#1A4D2E] text-white/60"}
+              data-testid="button-scan-mode"
+            >
+              <Camera className="w-4 h-4 mr-2" />
+              Scan
+            </Button>
+            <Button
+              variant={mode === "manual_entry" ? "default" : "outline"}
+              onClick={() => setMode("manual_entry")}
+              className={mode === "manual_entry" ? "flex-1 bg-[#D4AF37] text-[#051a11]" : "flex-1 border-[#1A4D2E] text-white/60"}
+              data-testid="button-manual-entry-mode"
+            >
+              <Search className="w-4 h-4 mr-2" />
+              Manual Entry
+            </Button>
+          </div>
+        )}
+
         {/* SCANNING MODE */}
         {mode === "scanning" && (
           <>
@@ -653,6 +717,17 @@ export default function ReceivingPage() {
                 </div>
               </CardContent>
             </Card>
+
+            {/* No Barcode Button */}
+            <Button
+              variant="outline"
+              onClick={() => setMode("manual_entry")}
+              className="w-full border-orange-500/50 text-orange-400"
+              data-testid="button-no-barcode"
+            >
+              <AlertCircle className="w-4 h-4 mr-2" />
+              Item Has No Barcode
+            </Button>
 
             {/* Simulation buttons */}
             <div className="space-y-2">
@@ -694,6 +769,11 @@ export default function ReceivingPage() {
                       </div>
                       <div className="flex-1">
                         <p className="text-sm font-medium text-white">{item.product.name}</p>
+                        {item.zoneId && (
+                          <p className="text-xs text-white/40">
+                            {zones.find(z => z.id === item.zoneId)?.name || "Zone"}
+                          </p>
+                        )}
                       </div>
                       <Badge variant="outline" className="border-[#1A4D2E] text-white/60">
                         {item.isKeg ? "1 Keg" : `+${item.qty}`}
@@ -704,6 +784,151 @@ export default function ReceivingPage() {
               </div>
             )}
           </>
+        )}
+
+        {/* MANUAL ENTRY MODE */}
+        {mode === "manual_entry" && (
+          <div className="space-y-4">
+            <Card className="bg-[#0a2419] border-2 border-[#D4AF37]">
+              <CardContent className="p-4 space-y-3">
+                <Label className="text-[#D4AF37] font-medium">Search Product</Label>
+                <div className="flex gap-2">
+                  <Input
+                    type="text"
+                    value={manualSearchQuery}
+                    onChange={(e) => setManualSearchQuery(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter" && manualSearchQuery.trim()) {
+                        handleManualSearch();
+                      }
+                    }}
+                    placeholder="Enter product name or UPC..."
+                    className="flex-1 bg-[#051a11] border-[#1A4D2E] text-white h-12 text-lg"
+                    autoFocus
+                    data-testid="input-manual-search"
+                  />
+                  <Button
+                    onClick={handleManualSearch}
+                    disabled={!manualSearchQuery.trim()}
+                    className="h-12 px-6 bg-[#D4AF37] text-[#051a11]"
+                    data-testid="button-manual-search"
+                  >
+                    Search
+                  </Button>
+                </div>
+                <p className="text-xs text-white/40">Search by product name or enter UPC code</p>
+              </CardContent>
+            </Card>
+
+            {/* Search Results */}
+            {manualSearchQuery && (
+              <div className="space-y-2">
+                {(() => {
+                  const cleanQuery = manualSearchQuery.toLowerCase().trim();
+                  const filtered = products.filter((p) => 
+                    p.name.toLowerCase().includes(cleanQuery) ||
+                    (p.upc && p.upc.includes(cleanQuery)) ||
+                    (p.brand && p.brand.toLowerCase().includes(cleanQuery))
+                  );
+
+                  if (filtered.length === 0) {
+                    return (
+                      <Card
+                        className="bg-[#0a2419] border-[#1A4D2E] border-dashed hover-elevate cursor-pointer"
+                        onClick={() => {
+                          setNewProductName(manualSearchQuery);
+                          setNewProductUpc("");
+                          setScannedUpc(null);
+                          setMode("new_product");
+                        }}
+                        data-testid="button-add-new-product-manual"
+                      >
+                        <CardContent className="p-4 flex items-center gap-3">
+                          <div className="w-10 h-10 rounded bg-[#D4AF37]/20 flex items-center justify-center">
+                            <Plus className="w-5 h-5 text-[#D4AF37]" />
+                          </div>
+                          <div>
+                            <p className="text-[#D4AF37] font-medium">Create New Product</p>
+                            <p className="text-xs text-white/40">"{manualSearchQuery}" not found</p>
+                          </div>
+                        </CardContent>
+                      </Card>
+                    );
+                  }
+
+                  return (
+                    <>
+                      <p className="text-sm text-white/60">Matching products:</p>
+                      {filtered.slice(0, 8).map((product) => (
+                        <Card
+                          key={product.id}
+                          className="bg-[#0a2419] border-[#1A4D2E] hover-elevate cursor-pointer"
+                          onClick={() => {
+                            setFoundProduct(product);
+                            setIsKeg(product.isSoldByVolume || false);
+                            setMode("known_product");
+                            setManualSearchQuery("");
+                          }}
+                          data-testid={`manual-result-${product.id}`}
+                        >
+                          <CardContent className="p-3 flex items-center gap-3">
+                            <div className="w-10 h-10 rounded bg-[#1A4D2E] flex items-center justify-center flex-shrink-0">
+                              {product.isSoldByVolume ? (
+                                <Beer className="w-5 h-5 text-[#D4AF37]" />
+                              ) : (
+                                <Package className="w-5 h-5 text-[#D4AF37]" />
+                              )}
+                            </div>
+                            <div className="flex-1 min-w-0">
+                              <p className="text-white font-medium truncate">{product.name}</p>
+                              <p className="text-xs text-white/40">
+                                {product.upc || "No UPC"} {product.bottleSizeMl ? `- ${product.bottleSizeMl}ml` : ""}
+                              </p>
+                            </div>
+                            <Badge variant="outline" className="text-xs border-[#1A4D2E] text-white/60 flex-shrink-0">
+                              {product.isSoldByVolume ? "Keg" : "Bottle"}
+                            </Badge>
+                          </CardContent>
+                        </Card>
+                      ))}
+                      {filtered.length > 8 && (
+                        <p className="text-center text-xs text-white/40">
+                          +{filtered.length - 8} more results
+                        </p>
+                      )}
+                    </>
+                  );
+                })()}
+              </div>
+            )}
+
+            {/* Recent Received */}
+            {recentReceived.length > 0 && (
+              <div className="space-y-2">
+                <p className="text-sm text-white/60">Recently Received:</p>
+                {recentReceived.map((item, idx) => (
+                  <Card key={idx} className="bg-[#0a2419] border border-[#1A4D2E]">
+                    <CardContent className="p-3 flex items-center gap-3">
+                      <div className="w-8 h-8 rounded-full bg-green-500/20 flex items-center justify-center">
+                        <Check className="w-4 h-4 text-green-400" />
+                      </div>
+                      <div className="flex-1">
+                        <p className="text-sm font-medium text-white">{item.product.name}</p>
+                        {item.zoneId && (
+                          <p className="text-xs text-white/40">
+                            {zones.find(z => z.id === item.zoneId)?.name || "Zone"}
+                          </p>
+                        )}
+                      </div>
+                      <Badge variant="outline" className="border-[#1A4D2E] text-white/60">
+                        {item.isKeg ? "1 Keg" : `+${item.qty}`}
+                      </Badge>
+                    </CardContent>
+                  </Card>
+                ))}
+              </div>
+            )}
+          </div>
         )}
 
         {/* KNOWN PRODUCT MODE */}
@@ -741,6 +966,34 @@ export default function ReceivingPage() {
                 </div>
               </CardContent>
             </Card>
+
+            {/* Zone Selection */}
+            {zones.length > 0 && (
+              <div className="space-y-2">
+                <Label className="text-white">Storage Location (Optional)</Label>
+                <div className="grid grid-cols-2 gap-2">
+                  {zones.map((zone) => (
+                    <Button
+                      key={zone.id}
+                      variant="outline"
+                      onClick={() => setSelectedZone(selectedZone === zone.id ? null : zone.id)}
+                      className={`
+                        justify-start
+                        ${selectedZone === zone.id 
+                          ? "border-[#D4AF37] text-[#D4AF37] bg-[#D4AF37]/10" 
+                          : "border-[#1A4D2E] text-white/60"
+                        }
+                      `}
+                      data-testid={`zone-${zone.id}`}
+                    >
+                      {selectedZone === zone.id && <Check className="w-4 h-4 mr-2" />}
+                      {zone.name}
+                    </Button>
+                  ))}
+                </div>
+                <p className="text-xs text-white/40">Select where this inventory is being stored</p>
+              </div>
+            )}
 
             {/* Quantity Input (only for bottles) */}
             {!isKeg && (

@@ -23,6 +23,7 @@ import { verifyPin } from "./security";
 export interface IStorage {
   // Users
   getUser(id: number): Promise<User | undefined>;
+  getUserByUserId(userId: string): Promise<User | undefined>;
   getUserByPin(pinCode: string): Promise<User | undefined>;
   createUser(user: InsertUser): Promise<User>;
   updateUser(id: number, user: Partial<InsertUser>): Promise<User | undefined>;
@@ -112,6 +113,11 @@ export class DatabaseStorage implements IStorage {
   // Users
   async getUser(id: number): Promise<User | undefined> {
     const [user] = await db.select().from(users).where(eq(users.id, id));
+    return user || undefined;
+  }
+
+  async getUserByUserId(userId: string): Promise<User | undefined> {
+    const [user] = await db.select().from(users).where(eq(users.userId, userId));
     return user || undefined;
   }
 

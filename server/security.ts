@@ -22,10 +22,22 @@ export function hashPin(pin: string): string {
 
 /**
  * Verify a PIN against a hash
+ * Supports both hashed (64 char hex) and plain text (4 digits) for migration
  */
 export function verifyPin(pin: string, hash: string): boolean {
   const pinHash = hashPin(pin);
-  return crypto.timingSafeEqual(Buffer.from(pinHash), Buffer.from(hash));
+  
+  // If hash length doesn't match, it might be plain text (migration support)
+  if (hash.length !== pinHash.length) {
+    return hash === pin; // Fallback for plain text during migration
+  }
+  
+  try {
+    return crypto.timingSafeEqual(Buffer.from(pinHash), Buffer.from(hash));
+  } catch {
+    // If timingSafeEqual fails (e.g., different lengths), fall back to plain text comparison
+    return hash === pin;
+  }
 }
 
 /**

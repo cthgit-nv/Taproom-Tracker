@@ -6,6 +6,67 @@ import { createServer } from "http";
 const app = express();
 const httpServer = createServer(app);
 
+// Environment variable validation
+function validateEnvironment() {
+  const errors: string[] = [];
+  const warnings: string[] = [];
+
+  // Required in production
+  if (process.env.NODE_ENV === "production") {
+    if (!process.env.SESSION_SECRET) {
+      errors.push("SESSION_SECRET is required in production");
+    }
+    if (!process.env.DATABASE_URL) {
+      errors.push("DATABASE_URL is required in production");
+    }
+  }
+
+  // Required always
+  if (!process.env.DATABASE_URL) {
+    errors.push("DATABASE_URL must be set");
+  }
+
+  // Optional but recommended
+  if (!process.env.SESSION_SECRET && process.env.NODE_ENV !== "development") {
+    warnings.push("SESSION_SECRET not set - using default (not secure for production)");
+  }
+
+  // Log configuration status (without exposing secrets)
+  const configStatus = {
+    NODE_ENV: process.env.NODE_ENV || "development",
+    PORT: process.env.PORT || "5000",
+    DATABASE_URL: process.env.DATABASE_URL ? "✓ Set" : "✗ Missing",
+    SESSION_SECRET: process.env.SESSION_SECRET ? "✓ Set" : "✗ Missing",
+    GOTAB_API_KEY: process.env.GOTAB_API_KEY ? "✓ Set" : "○ Not set",
+    UNTAPPD_API_TOKEN: process.env.UNTAPPD_API_TOKEN ? "✓ Set" : "○ Not set",
+    BARCODESPIDER_API_TOKEN: process.env.BARCODESPIDER_API_TOKEN ? "✓ Set" : "○ Not set",
+  };
+
+  console.log("Environment Configuration:");
+  console.log(JSON.stringify(configStatus, null, 2));
+
+  if (warnings.length > 0) {
+    warnings.forEach(warning => console.warn("⚠️  WARNING:", warning));
+  }
+
+  if (errors.length > 0) {
+    console.error("❌ Environment validation failed:");
+    errors.forEach(error => console.error("  -", error));
+    throw new Error(`Environment validation failed: ${errors.join(", ")}`);
+  }
+
+  console.log("✓ Environment validation passed");
+}
+
+// Health check endpoint for Railway monitoring
+app.get("/health", (_req: Request, res: Response) => {
+  res.json({ 
+    status: "ok", 
+    timestamp: new Date().toISOString(),
+    uptime: process.uptime(),
+  });
+});
+
 declare module "http" {
   interface IncomingMessage {
     rawBody: unknown;
@@ -82,6 +143,9 @@ app.use((req, res, next) => {
 });
 
 (async () => {
+  // Validate environment before starting
+  validateEnvironment();
+
   await registerRoutes(httpServer, app);
 
   app.use((err: any, _req: Request, res: Response, _next: NextFunction) => {
