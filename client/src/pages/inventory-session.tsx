@@ -15,7 +15,19 @@ import {
   DialogContent,
   DialogHeader,
   DialogTitle,
+  DialogDescription,
+  DialogFooter,
 } from "@/components/ui/dialog";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import { 
   ArrowLeft, 
   Camera, 
@@ -40,6 +52,7 @@ import { useToast } from "@/hooks/use-toast";
 import { PricingCalculator } from "@/components/pricing-calculator";
 import type { Zone, Product, InventorySession, Settings } from "@shared/schema";
 import { pmbService, type KegLevel } from "@/services/PourMyBeerService";
+import { bluetoothScaleService } from "@/services/BluetoothScaleService";
 
 type Mode = "setup" | "list" | "scan" | "input" | "review" | "view-completed";
 
@@ -127,6 +140,9 @@ export default function InventorySessionPage() {
   
   // Auto-start zone from URL param
   const [autoStartZone, setAutoStartZone] = useState<number | null>(null);
+  
+  // Quick complete confirmation
+  const [showCompleteConfirm, setShowCompleteConfirm] = useState(false);
 
   // Calculate total units - differs for bottles vs kegs
   const getTotalUnits = () => {
@@ -443,15 +459,71 @@ export default function InventorySessionPage() {
 
   const handleConnectScale = async () => {
     setScaleConnecting(true);
-    await new Promise(resolve => setTimeout(resolve, 1500));
-    setScaleConnected(true);
-    setScaleConnecting(false);
     
-    toast({
-      title: "Scale Connected",
-      description: "Bluetooth scale ready for the session",
-    });
+    try {
+      // Check if Web Bluetooth is supported
+      if (!bluetoothScaleService.isSupported()) {
+        const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent);
+        const message = isIOS
+          ? "Web Bluetooth requires Bluefy browser on iOS. Please install Bluefy from the App Store and open this app in Bluefy."
+          : "Web Bluetooth is not supported in this browser. Please use Chrome or Edge.";
+        
+        toast({
+          title: "Bluetooth Not Supported",
+          description: message,
+          variant: "destructive",
+          duration: 8000,
+        });
+        setScaleConnecting(false);
+        return;
+      }
+
+      // Connect to scale
+      await bluetoothScaleService.connect();
+      
+      // Set up weight change listener
+      bluetoothScaleService.onWeightChange((weight) => {
+        setScaleWeight(weight);
+        setIsManualEstimate(false);
+        
+        // Auto-calculate percentage if product is selected
+        if (currentProduct && !currentProduct.isSoldByVolume) {
+          const emptyWeight = currentProduct.emptyWeightGrams || 200;
+          const fullWeight = currentProduct.fullWeightGrams || (currentProduct.bottleSizeMl || 750) + 200;
+          const liquidWeight = fullWeight - emptyWeight;
+          const currentLiquid = Math.max(0, weight - emptyWeight);
+          const percentFull = Math.min(100, Math.round((currentLiquid / liquidWeight) * 100));
+          setPartialPercent([percentFull]);
+        }
+      });
+
+      setScaleConnected(true);
+      setScaleConnecting(false);
+      
+      toast({
+        title: "Scale Connected",
+        description: "Bluetooth scale ready for the session",
+      });
+    } catch (error) {
+      setScaleConnecting(false);
+      const message = error instanceof Error ? error.message : "Failed to connect to scale";
+      toast({
+        title: "Connection Failed",
+        description: message,
+        variant: "destructive",
+        duration: 6000,
+      });
+    }
   };
+
+  // Cleanup scale connection on unmount
+  useEffect(() => {
+    return () => {
+      if (scaleConnected) {
+        bluetoothScaleService.disconnect();
+      }
+    };
+  }, [scaleConnected]);
 
   const handleStartSession = () => {
     if (selectedZone) {
@@ -587,6 +659,35 @@ export default function InventorySessionPage() {
 
   const handleFinishSession = () => {
     setMode("review");
+  };
+
+  const handleQuickComplete = async () => {
+    // Quick complete - go directly to review and then submit
+    if (counts.size === 0 && offlineCounts.length === 0) {
+      toast({
+        title: "No Items Counted",
+        description: "Please count at least one item before completing",
+        variant: "destructive",
+      });
+      return;
+    }
+    
+    // Show confirmation dialog
+    setShowCompleteConfirm(true);
+  };
+
+  const confirmQuickComplete = async () => {
+    setShowCompleteConfirm(false);
+    
+    // Sync offline counts first if needed
+    if (offlineCounts.length > 0 && !isOffline) {
+      await syncOfflineCounts();
+    }
+    
+    // Complete the session
+    if (activeSession) {
+      finishSessionMutation.mutate(activeSession.id);
+    }
   };
 
   const handleSubmitSession = async () => {
@@ -771,22 +872,44 @@ export default function InventorySessionPage() {
                     <div>
                       <p className="font-medium text-white">Bluetooth Scale</p>
                       <p className="text-sm text-white/60">
-                        {scaleConnected ? "Connected - auto-weighs on scan" : "For partial bottles"}
+                        {scaleConnected 
+                          ? `Connected${bluetoothScaleService.getCurrentWeight() ? ` - ${bluetoothScaleService.getCurrentWeight()}g` : ''}`
+                          : bluetoothScaleService.isSupported() 
+                            ? "Tap to connect scale"
+                            : "Requires Bluefy browser on iOS"
+                        }
                       </p>
                     </div>
                   </div>
                   <Button
                     variant={scaleConnected ? "outline" : "default"}
                     size="sm"
-                    onClick={handleConnectScale}
-                    disabled={scaleConnected || scaleConnecting}
+                    onClick={scaleConnected ? () => {
+                      bluetoothScaleService.disconnect();
+                      setScaleConnected(false);
+                      setScaleWeight(null);
+                      toast({
+                        title: "Scale Disconnected",
+                        description: "Bluetooth scale disconnected",
+                      });
+                    } : handleConnectScale}
+                    disabled={scaleConnecting || (!bluetoothScaleService.isSupported() && !scaleConnected)}
                     className={scaleConnected 
                       ? "border-blue-400 text-blue-400" 
                       : "bg-[#1A4D2E] text-[#D4AF37]"
                     }
                     data-testid="button-connect-scale"
                   >
-                    {scaleConnecting ? "..." : scaleConnected ? "Connected" : "Connect"}
+                    {scaleConnecting ? (
+                      <>
+                        <Loader2 className="w-4 h-4 mr-1 animate-spin" />
+                        Connecting...
+                      </>
+                    ) : scaleConnected ? (
+                      "Disconnect"
+                    ) : (
+                      "Connect"
+                    )}
                   </Button>
                 </div>
               </CardContent>
@@ -948,13 +1071,32 @@ export default function InventorySessionPage() {
               })}
             </div>
 
-            <div className="fixed bottom-0 left-0 right-0 p-4 bg-[#051a11] border-t border-[#1A4D2E]">
+            <div className="fixed bottom-0 left-0 right-0 p-4 bg-[#051a11] border-t border-[#1A4D2E] space-y-2">
               <Button
                 onClick={handleFinishSession}
-                className="w-full h-14 bg-[#D4AF37] text-[#051a11] text-lg font-semibold"
-                data-testid="button-finish-session"
+                variant="outline"
+                className="w-full h-12 border-[#1A4D2E] text-white/80"
+                data-testid="button-review-session"
               >
-                Finish Session ({counts.size} items counted)
+                Review Session ({counts.size} items)
+              </Button>
+              <Button
+                onClick={handleQuickComplete}
+                disabled={counts.size === 0 && offlineCounts.length === 0 || finishSessionMutation.isPending}
+                className="w-full h-14 bg-[#D4AF37] text-[#051a11] text-lg font-semibold"
+                data-testid="button-complete-inventory"
+              >
+                {finishSessionMutation.isPending ? (
+                  <>
+                    <Loader2 className="w-5 h-5 mr-2 animate-spin" />
+                    Completing...
+                  </>
+                ) : (
+                  <>
+                    Complete Inventory ({counts.size} items)
+                    <Check className="w-5 h-5 ml-2" />
+                  </>
+                )}
               </Button>
             </div>
           </div>
@@ -966,10 +1108,13 @@ export default function InventorySessionPage() {
             displayProducts={displayProducts}
             handleSelectProduct={handleSelectProduct}
             handleFinishSession={handleFinishSession}
+            handleQuickComplete={handleQuickComplete}
             countsSize={counts.size}
+            offlineCountsLength={offlineCounts.length}
             isOffline={isOffline}
             scaleConnected={scaleConnected}
             setMode={setMode}
+            finishSessionMutation={finishSessionMutation}
           />
         )}
 
@@ -1293,7 +1438,35 @@ export default function InventorySessionPage() {
         {/* REVIEW MODE */}
         {mode === "review" && (
           <div className="space-y-4 pb-24">
-            <h2 className="text-lg font-medium text-white">Variance Report</h2>
+            <div className="flex items-center justify-between">
+              <h2 className="text-lg font-medium text-white">Review & Complete</h2>
+              <Badge className="bg-[#1A4D2E] text-[#D4AF37] border-none">
+                {counts.size} items counted
+              </Badge>
+            </div>
+            
+            {/* Summary Card */}
+            <Card className="bg-[#0a2419] border-2 border-[#1A4D2E]">
+              <CardContent className="p-4">
+                <div className="grid grid-cols-2 gap-4">
+                  <div>
+                    <p className="text-sm text-white/60 mb-1">Items Counted</p>
+                    <p className="text-2xl font-bold text-[#D4AF37]">{counts.size}</p>
+                  </div>
+                  <div>
+                    <p className="text-sm text-white/60 mb-1">Large Variances</p>
+                    <p className="text-2xl font-bold text-orange-400">
+                      {Array.from(counts.entries()).filter(([productId, count]) => {
+                        const product = displayProducts.find(p => p.id === productId);
+                        if (!product) return false;
+                        const expected = product.currentCountBottles || 0;
+                        return Math.abs(count.totalUnits - expected) > 2;
+                      }).length}
+                    </p>
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
             
             {offlineCounts.length > 0 && (
               <Card className="bg-orange-500/10 border-2 border-orange-500/50">
@@ -1305,56 +1478,77 @@ export default function InventorySessionPage() {
               </Card>
             )}
             
-            {Array.from(counts.entries()).map(([productId, count]) => {
-              const product = displayProducts.find(p => p.id === productId);
-              if (!product) return null;
-              
-              const expected = product.currentCountBottles || 0;
-              const variance = count.totalUnits - expected;
-              const isLargeVariance = Math.abs(variance) > 2;
-              
-              return (
-                <Card 
-                  key={productId}
-                  className={`bg-[#0a2419] border-2 ${isLargeVariance ? "border-red-500" : "border-[#1A4D2E]"}`}
-                >
-                  <CardContent className="p-4">
-                    <div className="flex items-center justify-between">
-                      <div className="flex-1">
-                        <div className="flex items-center gap-2">
-                          <p className="font-medium text-white">{product.name}</p>
-                          <Badge variant="outline" className={`text-xs ${
-                            count.isManualEstimate 
-                              ? "border-orange-400 text-orange-400" 
-                              : "border-blue-400 text-blue-400"
-                          }`}>
-                            {count.isManualEstimate ? "Manual" : "Scale"}
-                          </Badge>
+            <div className="space-y-2">
+              <h3 className="text-sm font-medium text-white/80">Variance Details</h3>
+              {Array.from(counts.entries()).map(([productId, count]) => {
+                const product = displayProducts.find(p => p.id === productId);
+                if (!product) return null;
+                
+                const expected = product.currentCountBottles || 0;
+                const variance = count.totalUnits - expected;
+                const isLargeVariance = Math.abs(variance) > 2;
+                
+                return (
+                  <Card 
+                    key={productId}
+                    className={`bg-[#0a2419] border-2 ${isLargeVariance ? "border-red-500/50" : "border-[#1A4D2E]"}`}
+                  >
+                    <CardContent className="p-3">
+                      <div className="flex items-center justify-between">
+                        <div className="flex-1">
+                          <div className="flex items-center gap-2">
+                            <p className="font-medium text-white text-sm">{product.name}</p>
+                            <Badge variant="outline" className={`text-xs ${
+                              count.isManualEstimate 
+                                ? "border-orange-400 text-orange-400" 
+                                : "border-blue-400 text-blue-400"
+                            }`}>
+                              {count.isManualEstimate ? "Manual" : "Scale"}
+                            </Badge>
+                          </div>
+                          <p className="text-xs text-white/60 mt-1">
+                            Expected: {expected.toFixed(1)} | Counted: {count.totalUnits.toFixed(1)}
+                          </p>
                         </div>
-                        <p className="text-sm text-white/60">
-                          Expected: {expected.toFixed(1)} | Counted: {count.totalUnits.toFixed(1)}
-                        </p>
+                        <div className={`text-right ${isLargeVariance ? "text-red-400" : "text-white/60"}`}>
+                          {isLargeVariance && <AlertTriangle className="w-4 h-4 inline mr-1" />}
+                          <span className="font-medium text-sm">
+                            {variance > 0 ? "+" : ""}{variance.toFixed(1)}
+                          </span>
+                        </div>
                       </div>
-                      <div className={`text-right ${isLargeVariance ? "text-red-400" : "text-white/60"}`}>
-                        {isLargeVariance && <AlertTriangle className="w-5 h-5 inline mr-1" />}
-                        <span className="font-medium">
-                          {variance > 0 ? "+" : ""}{variance.toFixed(1)}
-                        </span>
-                      </div>
-                    </div>
-                  </CardContent>
-                </Card>
-              );
-            })}
+                    </CardContent>
+                  </Card>
+                );
+              })}
+            </div>
 
-            <div className="fixed bottom-0 left-0 right-0 p-4 bg-[#051a11] border-t border-[#1A4D2E]">
+            <div className="fixed bottom-0 left-0 right-0 p-4 bg-[#051a11] border-t border-[#1A4D2E] space-y-2">
+              <Button
+                onClick={() => setMode(quickScanMode ? "scan" : "list")}
+                variant="outline"
+                className="w-full h-12 border-[#1A4D2E] text-white/80"
+                data-testid="button-back-to-counting"
+              >
+                Back to Counting
+              </Button>
               <Button
                 onClick={handleSubmitSession}
                 disabled={finishSessionMutation.isPending}
                 className="w-full h-14 bg-[#D4AF37] text-[#051a11] text-lg font-semibold"
                 data-testid="button-submit-session"
               >
-                {finishSessionMutation.isPending ? "Submitting..." : "Finish Session"}
+                {finishSessionMutation.isPending ? (
+                  <>
+                    <Loader2 className="w-5 h-5 mr-2 animate-spin" />
+                    Completing...
+                  </>
+                ) : (
+                  <>
+                    Complete & Finish Session
+                    <Check className="w-5 h-5 ml-2" />
+                  </>
+                )}
               </Button>
             </div>
           </div>
@@ -1500,6 +1694,32 @@ export default function InventorySessionPage() {
           </div>
         </DialogContent>
       </Dialog>
+
+      {/* Quick Complete Confirmation */}
+      <AlertDialog open={showCompleteConfirm} onOpenChange={setShowCompleteConfirm}>
+        <AlertDialogContent className="bg-[#0a2419] border-[#1A4D2E] text-white">
+          <AlertDialogHeader>
+            <AlertDialogTitle className="text-[#D4AF37]">Complete Inventory?</AlertDialogTitle>
+            <AlertDialogDescription className="text-white/60">
+              You've counted {counts.size} {counts.size === 1 ? 'item' : 'items'}. 
+              {offlineCounts.length > 0 && ` ${offlineCounts.length} offline ${offlineCounts.length === 1 ? 'count' : 'counts'} will be synced.`}
+              <br /><br />
+              This will finalize the inventory session and update product counts.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel className="border-[#1A4D2E] text-white/60">
+              Cancel
+            </AlertDialogCancel>
+            <AlertDialogAction
+              onClick={confirmQuickComplete}
+              className="bg-[#D4AF37] text-[#051a11] hover:bg-[#D4AF37]/90"
+            >
+              Complete Inventory
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }
@@ -1508,20 +1728,26 @@ interface ScanModeProps {
   displayProducts: Product[];
   handleSelectProduct: (product: Product) => void;
   handleFinishSession: () => void;
+  handleQuickComplete: () => Promise<void>;
   countsSize: number;
+  offlineCountsLength: number;
   isOffline: boolean;
   scaleConnected: boolean;
   setMode: (mode: Mode) => void;
+  finishSessionMutation: ReturnType<typeof useMutation>;
 }
 
 function ScanModeContent({
   displayProducts,
   handleSelectProduct,
   handleFinishSession,
+  handleQuickComplete,
   countsSize,
+  offlineCountsLength,
   isOffline,
   scaleConnected,
   setMode,
+  finishSessionMutation,
 }: ScanModeProps) {
   const { toast } = useToast();
   const [searchQuery, setSearchQuery] = useState("");
@@ -1607,9 +1833,11 @@ function ScanModeContent({
       if (scannerRef.current && scannerRunningRef.current) {
         try {
           await scannerRef.current.stop();
-        } catch {
+          scannerRunningRef.current = false;
+        } catch (err) {
+          console.error("Error stopping scanner:", err);
+          scannerRunningRef.current = false;
         }
-        scannerRunningRef.current = false;
       }
       scannerRef.current = null;
       setScannerReady(false);
@@ -1630,20 +1858,44 @@ function ScanModeContent({
         
         await stopScanner();
         
+        // Check if camera is available
+        const devices = await Html5Qrcode.getCameras();
+        if (devices.length === 0) {
+          throw new Error("No camera found");
+        }
+        
         const scanner = new Html5Qrcode(scannerContainerId);
         scannerRef.current = scanner;
         
+        // Try to use back camera first, fallback to any available camera
+        let cameraId: string | { facingMode: string } = { facingMode: "environment" };
+        try {
+          const backCamera = devices.find(d => d.label.toLowerCase().includes("back") || d.label.toLowerCase().includes("rear"));
+          if (backCamera) {
+            cameraId = backCamera.id;
+          }
+        } catch {
+          // Fallback to facingMode
+        }
+        
         await scanner.start(
-          { facingMode: "environment" },
+          cameraId,
           {
             fps: 10,
             qrbox: { width: 250, height: 150 },
             aspectRatio: 1.333,
+            disableFlip: false,
           },
           (decodedText) => {
             handleScannedCode(decodedText);
           },
-          () => {}
+          (errorMessage) => {
+            // Silent error handling - scanner will keep trying
+            // Only log if it's a significant error
+            if (!errorMessage.includes("NotFoundException")) {
+              console.debug("Scanner error:", errorMessage);
+            }
+          }
         );
         
         scannerRunningRef.current = true;
@@ -1652,9 +1904,27 @@ function ScanModeContent({
       } catch (err) {
         console.error("Camera error:", err);
         scannerRunningRef.current = false;
-        const message = err instanceof Error ? err.message : "Camera access denied";
-        setCameraError(message.includes("Permission") ? "Camera permission denied. Please allow camera access." : "Could not start camera. Try manual entry.");
+        const error = err instanceof Error ? err : new Error(String(err));
+        let errorMessage = "Could not start camera. Try manual entry.";
+        
+        if (error.message.includes("Permission") || error.message.includes("permission")) {
+          errorMessage = "Camera permission denied. Please allow camera access in your browser settings.";
+        } else if (error.message.includes("NotFound") || error.message.includes("No camera")) {
+          errorMessage = "No camera found. Please use manual entry.";
+        } else if (error.message.includes("NotAllowedError") || error.message.includes("NotReadableError")) {
+          errorMessage = "Camera is in use by another app. Close other apps and try again.";
+        }
+        
+        setCameraError(errorMessage);
         setScannerReady(false);
+        
+        // Auto-switch to manual entry after showing error
+        toast({
+          title: "Camera Unavailable",
+          description: errorMessage,
+          variant: "destructive",
+          duration: 5000,
+        });
       }
     };
     
@@ -1666,7 +1936,7 @@ function ScanModeContent({
         clearTimeout(scanTimeoutRef.current);
       }
     };
-  }, [useCameraScanner, handleScannedCode]);
+  }, [useCameraScanner, handleScannedCode, toast]);
   
   const cleanUpc = (query: string) => query.replace(/[-\s]/g, "");
   const isUpc = (query: string) => /^\d{8,14}$/.test(cleanUpc(query));
@@ -2097,13 +2367,32 @@ function ScanModeContent({
         </DialogContent>
       </Dialog>
 
-      <div className="fixed bottom-0 left-0 right-0 p-4 bg-[#051a11] border-t border-[#1A4D2E]">
+      <div className="fixed bottom-0 left-0 right-0 p-4 bg-[#051a11] border-t border-[#1A4D2E] space-y-2">
         <Button
           onClick={handleFinishSession}
-          className="w-full h-14 bg-[#D4AF37] text-[#051a11] text-lg font-semibold"
-          data-testid="button-finish-session-scan"
+          variant="outline"
+          className="w-full h-12 border-[#1A4D2E] text-white/80"
+          data-testid="button-review-session-scan"
         >
-          Finish Session ({countsSize} items counted)
+          Review Session ({countsSize} items)
+        </Button>
+        <Button
+          onClick={handleQuickComplete}
+          disabled={(countsSize === 0 && offlineCountsLength === 0) || finishSessionMutation.isPending}
+          className="w-full h-14 bg-[#D4AF37] text-[#051a11] text-lg font-semibold"
+          data-testid="button-complete-inventory-scan"
+        >
+          {finishSessionMutation.isPending ? (
+            <>
+              <Loader2 className="w-5 h-5 mr-2 animate-spin" />
+              Completing...
+            </>
+          ) : (
+            <>
+              Complete Inventory ({countsSize} items)
+              <Check className="w-5 h-5 ml-2" />
+            </>
+          )}
         </Button>
       </div>
     </div>
