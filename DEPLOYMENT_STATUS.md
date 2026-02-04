@@ -1,13 +1,22 @@
 # Railway Deployment Investigation Status
 
-**Date:** 2026-02-03
+**Date:** 2026-02-04
 **Branch:** `claude/fix-railway-deployment-apfwy`
 
 ---
 
 ## Summary
 
-The user is experiencing Railway deployment crashes. Initial investigation complete.
+Railway deployment crashes being investigated. **One fix applied.**
+
+---
+
+## Fix Applied
+
+### Health Check Timeout (FIXED)
+- **Problem:** `healthcheckTimeout` was set to 100ms (0.1 seconds)
+- **Impact:** App marked as unhealthy before database connection established → crash loop
+- **Fix:** Changed to 30000ms (30 seconds) in `railway.json`
 
 ---
 
