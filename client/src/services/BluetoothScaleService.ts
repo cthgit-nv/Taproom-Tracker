@@ -10,6 +10,91 @@
  * Recommended: Use Bluefy browser on iOS for best compatibility
  */
 
+// Web Bluetooth API type definitions (not in standard TypeScript lib)
+interface BluetoothDevice extends EventTarget {
+  readonly id: string;
+  readonly name?: string;
+  readonly gatt?: BluetoothRemoteGATTServer;
+  addEventListener(type: 'gattserverdisconnected', listener: (event: Event) => void): void;
+}
+
+interface BluetoothRemoteGATTServer {
+  readonly device: BluetoothDevice;
+  readonly connected: boolean;
+  connect(): Promise<BluetoothRemoteGATTServer>;
+  disconnect(): void;
+  getPrimaryService(service: BluetoothServiceUUID): Promise<BluetoothRemoteGATTService>;
+  getPrimaryServices(service?: BluetoothServiceUUID): Promise<BluetoothRemoteGATTService[]>;
+}
+
+interface BluetoothRemoteGATTService extends EventTarget {
+  readonly device: BluetoothDevice;
+  readonly uuid: string;
+  readonly isPrimary: boolean;
+  getCharacteristic(characteristic: BluetoothCharacteristicUUID): Promise<BluetoothRemoteGATTCharacteristic>;
+  getCharacteristics(characteristic?: BluetoothCharacteristicUUID): Promise<BluetoothRemoteGATTCharacteristic[]>;
+}
+
+interface BluetoothRemoteGATTCharacteristic extends EventTarget {
+  readonly service: BluetoothRemoteGATTService;
+  readonly uuid: string;
+  readonly properties: BluetoothCharacteristicProperties;
+  readonly value?: DataView;
+  readValue(): Promise<DataView>;
+  writeValue(value: BufferSource): Promise<void>;
+  startNotifications(): Promise<BluetoothRemoteGATTCharacteristic>;
+  stopNotifications(): Promise<BluetoothRemoteGATTCharacteristic>;
+  addEventListener(type: 'characteristicvaluechanged', listener: (event: Event) => void): void;
+}
+
+interface BluetoothCharacteristicProperties {
+  readonly broadcast: boolean;
+  readonly read: boolean;
+  readonly writeWithoutResponse: boolean;
+  readonly write: boolean;
+  readonly notify: boolean;
+  readonly indicate: boolean;
+  readonly authenticatedSignedWrites: boolean;
+  readonly reliableWrite: boolean;
+  readonly writableAuxiliaries: boolean;
+}
+
+type BluetoothServiceUUID = number | string;
+type BluetoothCharacteristicUUID = number | string;
+
+interface BluetoothRequestDeviceOptions {
+  filters?: BluetoothLEScanFilter[];
+  optionalServices?: BluetoothServiceUUID[];
+  acceptAllDevices?: boolean;
+}
+
+interface BluetoothLEScanFilter {
+  services?: BluetoothServiceUUID[];
+  name?: string;
+  namePrefix?: string;
+  manufacturerData?: BluetoothManufacturerDataFilter[];
+  serviceData?: BluetoothServiceDataFilter[];
+}
+
+interface BluetoothManufacturerDataFilter {
+  companyIdentifier: number;
+  dataPrefix?: BufferSource;
+  mask?: BufferSource;
+}
+
+interface BluetoothServiceDataFilter {
+  service: BluetoothServiceUUID;
+  dataPrefix?: BufferSource;
+  mask?: BufferSource;
+}
+
+interface Navigator {
+  bluetooth?: {
+    requestDevice(options: BluetoothRequestDeviceOptions): Promise<BluetoothDevice>;
+    getAvailability(): Promise<boolean>;
+  };
+}
+
 interface ScaleReading {
   weight: number; // in grams
   unit: 'g' | 'kg' | 'oz' | 'lb';
@@ -53,16 +138,14 @@ class BluetoothScaleServiceImpl implements BluetoothScaleService {
     // Try to restore connection from localStorage
     this.restoreConnection();
     
-    // Listen for device disconnection
-    if (typeof navigator !== 'undefined' && 'bluetooth' in navigator) {
-      navigator.bluetooth.addEventListener('advertisementreceived', () => {});
-    }
+    // Web Bluetooth API is available via navigator.bluetooth
   }
 
   isSupported(): boolean {
     if (typeof navigator === 'undefined') return false;
     if (typeof window === 'undefined') return false;
-    return 'bluetooth' in navigator && 'requestDevice' in navigator.bluetooth;
+    const nav = navigator as Navigator;
+    return 'bluetooth' in nav && nav.bluetooth !== undefined && 'requestDevice' in nav.bluetooth;
   }
 
   isConnected(): boolean {
@@ -95,7 +178,11 @@ class BluetoothScaleServiceImpl implements BluetoothScaleService {
       }
 
       // Request device with filters
-      const device = await navigator.bluetooth.requestDevice({
+      const nav = navigator as Navigator;
+      if (!nav.bluetooth) {
+        throw new Error('Web Bluetooth API not available');
+      }
+      const device = await nav.bluetooth.requestDevice({
         filters: [
           { services: [SCALE_SERVICE_UUID] },
           { services: ALTERNATIVE_SERVICE_UUIDS },
@@ -121,7 +208,10 @@ class BluetoothScaleServiceImpl implements BluetoothScaleService {
       });
 
       // Connect to GATT server
-      this.server = await device.gatt!.connect();
+      if (!device.gatt) {
+        throw new Error('Device does not support GATT server');
+      }
+      this.server = await device.gatt.connect();
       
       // Try to find the scale service
       let service: BluetoothRemoteGATTService | null = null;
@@ -178,8 +268,11 @@ class BluetoothScaleServiceImpl implements BluetoothScaleService {
       // Enable notifications if supported
       if (characteristic.properties.notify) {
         await characteristic.startNotifications();
-        characteristic.addEventListener('characteristicvaluechanged', (event) => {
-          this.handleWeightUpdate(event.target as BluetoothRemoteGATTCharacteristic);
+        characteristic.addEventListener('characteristicvaluechanged', (event: Event) => {
+          const target = event.target;
+          if (target && 'value' in target) {
+            this.handleWeightUpdate(target as BluetoothRemoteGATTCharacteristic);
+          }
         });
       }
 
@@ -232,8 +325,10 @@ class BluetoothScaleServiceImpl implements BluetoothScaleService {
     }
   }
 
-  private handleWeightUpdate(characteristic: BluetoothRemoteGATTCharacteristic): void {
-    const dataView = characteristic.value;
+  private handleWeightUpdate(characteristic: BluetoothRemoteGATTCharacteristic | EventTarget): void {
+    const char = characteristic as BluetoothRemoteGATTCharacteristic;
+    if (!char || !char.value) return;
+    const dataView = char.value;
     if (!dataView) return;
 
     const weight = this.parseWeightData(dataView);
