@@ -6,3 +6,6 @@ cmds = ["npm ci"]
 
 [phases.build]
 cmds = ["npm run build"]
+
+[phases.deploy]
+cmds = ["npm run db:push"]
